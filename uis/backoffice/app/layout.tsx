@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk" });
 
 export const metadata: Metadata = {
   title: "HealthCore Backoffice",
@@ -12,12 +16,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-gray-50">
-        <header className="bg-blue-800 text-white px-6 py-4">
-          <h1 className="font-bold text-lg">HealthCore Backoffice</h1>
+    <html lang="en" className={`${manrope.variable} ${spaceGrotesk.variable}`}>
+      <body className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,106,61,0.10),transparent_30%),linear-gradient(180deg,#fff8ef_0%,#f3ede5_100%)] font-[family-name:var(--font-manrope)] text-[#101010]">
+        <header className="sticky top-0 z-[100] border-b border-[rgba(16,16,16,0.06)] bg-[rgba(255,250,243,0.82)] px-[5%] py-[18px] backdrop-blur-[14px] md:px-[8%]">
+          <h1 className="font-[family-name:var(--font-space-grotesk)] text-[1.35rem] font-bold tracking-[-0.04em]">
+            Health<span className="text-[#ff6a3d]">Core</span> Backoffice
+          </h1>
         </header>
-        <main className="p-6">{children}</main>
+        <main className="px-[5%] py-10 md:px-[8%]">{children}</main>
       </body>
     </html>
   );
