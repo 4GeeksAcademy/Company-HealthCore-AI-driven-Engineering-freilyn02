@@ -20,6 +20,13 @@ HealthCore's core bet is "continuity over convenience": instead of competing on 
 - stage: pending / review / personal_interview / technical_interview / offer_presented
 - notes: internal notes attached to a candidate record
 
+### Supplier (Supplier Directory)
+
+- name, country, categories (list), rate, updated_at, status
+- country: US / UK
+- categories: Medical Equipment, Pharmaceuticals, PPE & Medical Consumables, Lab Supplies, IT & Telehealth Equipment, Facility & Maintenance, Office & Administrative Supplies
+- status: active / suspended
+
 ## Constraints
 - UI must always show human-readable labels, never raw API values (e.g. "Personal interview", not "personal_interview")
 - Terminology across apps should reflect HealthCore branding — not a generic implementation

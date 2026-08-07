@@ -1,0 +1,7 @@
+
+# Python (services/api)
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+services/api/data/
