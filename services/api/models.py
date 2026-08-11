@@ -30,7 +30,6 @@ class SupplierCountry(str, Enum):
 
 
 # ---- Input schemas (what the client sends) ----
-
 class SupplierCreate(BaseModel):
     name: str = Field(..., min_length=1)
     country: SupplierCountry
@@ -48,7 +47,6 @@ class SupplierStatusPatch(BaseModel):
 
 
 # ---- Output schema (what the API returns) ----
-
 class SupplierOut(BaseModel):
     id: int
     name: str
@@ -57,3 +55,61 @@ class SupplierOut(BaseModel):
     rate: float
     status: SupplierStatus
     updated_at: str
+
+
+# ---- User & Profile models (Authentication) ----
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MANAGER = "manager"
+    USER = "user"
+
+
+# ---- Input schemas (what the client sends) ----
+class UserCreate(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=8)
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserCredentialsUpdate(BaseModel):
+    email: str | None = None
+    role: UserRole | None = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+# ---- Output schemas (what the API returns) ----
+class ProfileOut(BaseModel):
+    id: int
+    user_id: int
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    is_active: bool
+    role: UserRole
+    created_at: str
+
+
+class UserWithProfileOut(UserOut):
+    profile: ProfileOut | None = None
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
