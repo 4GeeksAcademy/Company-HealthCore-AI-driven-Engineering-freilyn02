@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import SupplierList from "../../components/SupplierList";
+import SupplierList from "@/components/SupplierList";
 
 export default function SuppliersPage() {
   return (
