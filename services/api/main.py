@@ -10,9 +10,13 @@ import repository
 import users_repository
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
+from app.core.email_service import send_reset_email
 from models import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     ProfileOut,
     ProfileUpdate,
+    ResetPasswordRequest,
     SupplierCreate,
     SupplierOut,
     SupplierRatePatch,
@@ -48,6 +52,36 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def read_current_user(current_user: dict = Depends(get_current_user)):
     profile = users_repository.get_profile_by_user_id(current_user["id"])
     return {**current_user, "profile": profile}
+
+@app.post("/auth/forgot-password", status_code=200)
+def forgot_password(payload: ForgotPasswordRequest):
+    """Always returns 200, whether or not the email is registered —
+    this avoids leaking which emails exist in the system.
+    """
+    raw_token = users_repository.request_password_reset(payload.email)
+    if raw_token is not None:
+        reset_link = f"http://localhost:3000/reset-password?token={raw_token}"
+        send_reset_email(payload.email, reset_link)
+    return {"detail": "If that address is registered, you'll receive a link shortly"}
+
+@app.post("/auth/reset-password", status_code=200)
+def reset_password_route(payload: ResetPasswordRequest):
+    success = users_repository.reset_password(payload.token, payload.new_password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    return {"detail": "Password reset successfully"}
+
+
+@app.post("/auth/change-password", status_code=200)
+def change_password_route(
+    payload: ChangePasswordRequest, current_user: dict = Depends(get_current_user)
+):
+    success = users_repository.change_password(
+        current_user["id"], payload.current_password, payload.new_password
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    return {"detail": "Password changed successfully"}
 
 
 # ---- Users ----

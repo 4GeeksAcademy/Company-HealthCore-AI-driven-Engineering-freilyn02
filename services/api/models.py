@@ -113,3 +113,18 @@ class UserWithProfileOut(UserOut):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+# ---- Password Reset models ----
+
+# ---- Input schemas (what the client sends) ----
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., min_length=1)
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
+
