@@ -17,11 +17,14 @@ export default function RootLayout({
           <h1 className="font-[family-name:var(--font-space-grotesk)] text-lg tracking-[-0.03em] text-[#ff6a3d]">
             HealthCore Backoffice
           </h1>
-          <nav className="text-sm">
+          <nav className="flex gap-4 text-sm">
             <Link href="/suppliers" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
               Supplier Directory
             </Link>
-          </nav>
+            <Link href="/incidents" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
+              Incident Manager
+            </Link>
+          </nav> 
         </header>
         <main className="p-6">{children}</main>
       </body>
