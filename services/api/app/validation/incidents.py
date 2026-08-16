@@ -98,7 +98,15 @@ class InvalidDescriptionError(IncidentValidationError):
     def __init__(self):
         super().__init__(
             reason="empty_description",
-            message="Description must not be empty",
+            message="Description must be at least 5 characters",
+        )
+
+
+class ClosedWithoutScoreError(IncidentValidationError):
+    def __init__(self):
+        super().__init__(
+            reason="closed_without_score",
+            message="status is CLOSED but satisfaction_score is missing",
         )
 
 
@@ -176,7 +184,7 @@ def validate_row(raw: dict[str, str]) -> ValidatedIncidentRow:
         raise InvalidCategoryError(category)
 
     description = (raw.get("description") or "").strip()
-    if not description:
+    if len(description) < 5:
         raise InvalidDescriptionError()
 
     status = (raw.get("status") or "").strip()
@@ -198,6 +206,9 @@ def validate_row(raw: dict[str, str]) -> ValidatedIncidentRow:
             raise InvalidSatisfactionScoreError(raw_score) from exc
         if not (MIN_SATISFACTION_SCORE <= satisfaction_score <= MAX_SATISFACTION_SCORE):
             raise InvalidSatisfactionScoreError(raw_score)
+
+    if status == "CLOSED" and satisfaction_score is None:
+        raise ClosedWithoutScoreError()
 
     return ValidatedIncidentRow(
         incident_id=incident_id,
