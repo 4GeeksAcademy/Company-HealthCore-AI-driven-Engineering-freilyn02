@@ -15,6 +15,10 @@
 .env.local
 !.env.example
 
+# Local runtime data
+**/data/*.json
+!**/data/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db
