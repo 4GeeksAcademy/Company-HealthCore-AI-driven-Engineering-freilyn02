@@ -1,10 +1,9 @@
-import uuid
-from datetime import datetime, timezone
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from tinydb import Query
+from datetime import datetime, timezone
 
 from database import incidents_table
 from models import (
@@ -18,8 +17,14 @@ from models import (
 
 app = FastAPI(title="HealthCore — Centralized Incident Manager")
 
-IncidentQuery = Query()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+IncidentQuery = Query()
 
 # --- Error handling ----------------------------------------------------
 # Business-rule failures raise HTTPException(400, ...) with the exact
