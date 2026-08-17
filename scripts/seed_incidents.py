@@ -91,24 +91,35 @@ def transform_row(row: ValidatedIncidentRow) -> dict | None:
 
 
 def load_csv_rows(csv_path: Path) -> list[dict[str, str]]:
-    with csv_path.open(newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+    try:
+        with csv_path.open(newline="", encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"Error: could not read CSV file {csv_path} — {exc}", file=sys.stderr)
+        sys.exit(1)
+    except csv.Error as exc:
+        print(f"Error: invalid CSV format in {csv_path} — {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def seed() -> None:
     if not CSV_PATH.exists():
-        print(f"CSV not found at {CSV_PATH}")
-        return
+        print(f"Error: CSV not found at {CSV_PATH}", file=sys.stderr)
+        sys.exit(1)
 
     raw_rows = load_csv_rows(CSV_PATH)
     valid_rows, invalid_rows = separate_valid_invalid(raw_rows)
 
     transformed: list[dict] = []
     skipped_after_transform = 0
+    skipped_unmapped = 0
     for row in valid_rows:
         doc = transform_row(row)
         if doc is None:
             skipped_after_transform += 1
+            continue
+        if doc["category"] is None or doc["status"] is None:
+            skipped_unmapped += 1
             continue
         transformed.append(doc)
 
@@ -140,6 +151,9 @@ def seed() -> None:
 
     if skipped_after_transform:
         print(f"Skipped after transform (empty title): {skipped_after_transform}")
+
+    if skipped_unmapped:
+        print(f"Skipped (unmapped category/status): {skipped_unmapped}")
 
     print(f"Inserted this run:  {inserted}")
     print(f"Already present:    {already_present}")
