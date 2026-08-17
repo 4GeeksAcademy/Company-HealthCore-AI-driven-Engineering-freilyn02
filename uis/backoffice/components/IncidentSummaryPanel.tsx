@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IncidentSummary } from "../types/incident";
 import { CATEGORY_LABELS, STATUS_LABELS, BRANCH_LABELS } from "../lib/incidentLabels";
 import { getIncidentSummary } from "../services/incidents";
@@ -34,9 +34,13 @@ export default function IncidentSummaryPanel() {
   const [summary, setSummary] = useState<IncidentSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
-  useEffect(() => {
+  const fetchSummary = useCallback(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+
     getIncidentSummary()
       .then((data) => {
         if (!cancelled) setSummary(data);
@@ -49,10 +53,18 @@ export default function IncidentSummaryPanel() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const cancel = fetchSummary();
+    return cancel;
+    // retryKey is intentionally in the deps — it exists only to let the
+    // Retry button re-trigger this effect on demand.
+  }, [fetchSummary, retryKey]);
 
   // This panel's own failure/loading state never blocks the rest of the page.
   if (loading) {
@@ -61,9 +73,15 @@ export default function IncidentSummaryPanel() {
 
   if (error || !summary) {
     return (
-      <p className="rounded-xl border border-[#b3261e]/20 bg-[#b3261e]/5 px-3 py-2 text-sm font-semibold text-[#b3261e]">
-        {error ?? "Summary unavailable."}
-      </p>
+      <div className="rounded-xl border border-[#b3261e]/20 bg-[#b3261e]/5 px-3 py-2 text-sm font-semibold text-[#b3261e]">
+        <p className="mb-2">{error ?? "Summary unavailable."}</p>
+        <button
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="rounded-full border border-[#b3261e]/40 bg-white px-3 py-1 text-xs font-semibold text-[#b3261e] transition hover:bg-[#b3261e]/10"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 

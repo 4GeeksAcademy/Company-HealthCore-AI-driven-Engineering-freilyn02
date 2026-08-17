@@ -26,6 +26,8 @@ interface FieldErrors {
   form?: string;
 }
 
+const KNOWN_FIELDS = ["title", "description", "category", "origin", "branch"] as const;
+
 export default function IncidentForm({ onCreated }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -76,7 +78,11 @@ export default function IncidentForm({ onCreated }: Props) {
       setSuccess(true);
       onCreated();
     } catch (err) {
-      if (err instanceof ApiError && err.field) {
+      if (
+        err instanceof ApiError &&
+        err.field &&
+        (KNOWN_FIELDS as readonly string[]).includes(err.field)
+      ) {
         setErrors({ [err.field]: err.message } as FieldErrors);
       } else {
         setErrors({
