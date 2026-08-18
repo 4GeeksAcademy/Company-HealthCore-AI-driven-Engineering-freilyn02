@@ -40,6 +40,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = users_repository.find_user_by_email(form_data.username)
     if user is None or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Incorrect email or password")
+    if not user["is_active"]:
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
     token = create_access_token({"sub": str(user["id"])})
     return {"access_token": token, "token_type": "bearer"}
 

@@ -1,9 +1,12 @@
 from fastapi.testclient import TestClient
 
-from database import suppliers_table
+from database import profiles_table, suppliers_table, users_table
 from main import app
 
 client = TestClient(app)
+
+_AUTH_EMAIL = "suppliers.tester@example.com"
+_AUTH_PASSWORD = "supersecure123"
 
 
 def _create_payload(**overrides):
@@ -19,6 +22,17 @@ def _create_payload(**overrides):
 
 def setup_function():
     suppliers_table.truncate()
+    users_table.truncate()
+    profiles_table.truncate()
+
+    # Suppliers routes are protected (see the auth project); authenticate
+    # once per test and reuse the token for every request in this module.
+    client.post("/users", json={"email": _AUTH_EMAIL, "password": _AUTH_PASSWORD})
+    login = client.post(
+        "/auth/login", data={"username": _AUTH_EMAIL, "password": _AUTH_PASSWORD}
+    )
+    token = login.json()["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
 
 
 def test_create_supplier_valid():
