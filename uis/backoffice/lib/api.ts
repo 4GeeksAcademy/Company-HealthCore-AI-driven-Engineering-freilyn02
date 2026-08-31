@@ -1,3 +1,5 @@
+import { getToken, clearToken } from "./auth";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export class ApiError extends Error {
@@ -11,11 +13,21 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getToken();
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options?.headers,
+  };
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers,
   });
-
+  if (res.status === 401) {
+    clearToken();
+    window.location.assign("/login");
+    throw new ApiError("Unauthorized", 401);
+  }
   if (!res.ok) {
     let message = res.statusText;
     let field: string | undefined;
@@ -34,7 +46,6 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
     }
     throw new ApiError(message, res.status, field);
   }
-
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
