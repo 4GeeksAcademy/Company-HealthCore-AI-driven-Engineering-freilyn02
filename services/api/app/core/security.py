@@ -48,3 +48,16 @@ def create_access_token(data: dict) -> str:
 def decode_access_token(token: str) -> dict:
     """Decode and validate a JWT. Raises JWTError if invalid or expired."""
     return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+import hashlib
+import secrets
+
+
+def generate_reset_token() -> str:
+    """Generate a URL-safe random token to send in the reset link."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    """Hash a reset token for storage (deterministic, unlike bcrypt)."""
+    return hashlib.sha256(token.encode()).hexdigest()    
