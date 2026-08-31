@@ -1,16 +1,27 @@
-# Python (services/api)
-__pycache__/
+# Python
+**/.venv/
+**/__pycache__/
 *.pyc
-.venv/
-.pytest_cache/
+**/.pytest_cache/
 services/api/data/
 
-# Environment variables
+# Node / Next.js
+**/node_modules/
+**/.next/
+**/dist/
+**/build/
+.vite/
+
+# Env files
 .env
 .env.local
 *.env
 !.env.example
 
-node_modules/
-dist/
-.vite/
+# Local runtime data
+**/data/*.json
+!**/data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db

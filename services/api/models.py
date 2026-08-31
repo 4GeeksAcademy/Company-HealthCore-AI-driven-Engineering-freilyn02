@@ -1,115 +1,46 @@
-"""Pydantic models for the Supplier Directory API.
-
-Input and output schemas are kept separate: `updated_at` and `id`
-are server-managed and never accepted from clients.
-"""
+"""Pydantic models: Incidents, Suppliers, and Auth (Users/Profiles) for the HealthCore API."""
+from datetime import datetime
 from enum import Enum
-from typing import List
+from typing import List, Optional
 
-from pydantic import BaseModel, Field
-
-
-class SupplierStatus(str, Enum):
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
+from pydantic import BaseModel, Field, field_validator
 
 
-class SupplierCategory(str, Enum):
-    MEDICAL_EQUIPMENT = "Medical Equipment"
-    PHARMACEUTICALS = "Pharmaceuticals"
-    PPE_CONSUMABLES = "PPE & Medical Consumables"
-    LAB_SUPPLIES = "Lab Supplies"
-    IT_TELEHEALTH = "IT & Telehealth Equipment"
-    FACILITY_MAINTENANCE = "Facility & Maintenance"
-    OFFICE_ADMIN = "Office & Administrative Supplies"
+# ============================================================================
+# Incidents (Centralized Incident Manager)
+# ============================================================================
+
+# --- Enums (mirror CONTEXT.md exactly — see CONTEXT-healthcore.es.md) ------
+
+class IncidentCategory(str, Enum):
+    CLINICAL_EQUIPMENT = "clinical_equipment"
+    IT_SYSTEM = "it_system"
+    BILLING_ERROR = "billing_error"
+    COMPLIANCE_BREACH = "compliance_breach"
+    PATIENT_EXPERIENCE = "patient_experience"
+    STAFF_ISSUE = "staff_issue"
+    FACILITY_ISSUE = "facility_issue"
+    REFERRAL_ISSUE = "referral_issue"
+    OTHER = "other"
 
 
-class SupplierCountry(str, Enum):
-    US = "US"
-    UK = "UK"
+class IncidentStatus(str, Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    DISCARDED = "discarded"
 
 
-# ---- Input schemas (what the client sends) ----
-class SupplierCreate(BaseModel):
-    name: str = Field(..., min_length=1)
-    country: SupplierCountry
-    categories: List[SupplierCategory] = Field(..., min_length=1)
-    rate: float = Field(..., gt=0)
-    status: SupplierStatus = SupplierStatus.ACTIVE
+class IncidentOrigin(str, Enum):
+    CUSTOMER = "customer"
+    BRANCH = "branch"
+    INTERNAL = "internal"
 
 
-class SupplierRatePatch(BaseModel):
-    rate: float = Field(..., gt=0)
-
-
-class SupplierStatusPatch(BaseModel):
-    status: SupplierStatus
-
-
-# ---- Output schema (what the API returns) ----
-class SupplierOut(BaseModel):
-    id: int
-    name: str
-    country: SupplierCountry
-    categories: List[SupplierCategory]
-    rate: float
-    status: SupplierStatus
-    updated_at: str
-
-
-# ---- User & Profile models (Authentication) ----
-class UserRole(str, Enum):
-    ADMIN = "admin"
-    MANAGER = "manager"
-    USER = "user"
-
-
-# ---- Input schemas (what the client sends) ----
-class UserCreate(BaseModel):
-    email: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=8)
-    name: str | None = None
-    phone: str | None = None
-    address: str | None = None
-
-
-class UserCredentialsUpdate(BaseModel):
-    email: str | None = None
-    role: UserRole | None = None
-
-
-class ProfileUpdate(BaseModel):
-    name: str | None = None
-    phone: str | None = None
-    address: str | None = None
-
-
-class LoginRequest(BaseModel):
-    email: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
-
-
-# ---- Output schemas (what the API returns) ----
-class ProfileOut(BaseModel):
-    id: int
-    user_id: int
-    name: str | None = None
-    phone: str | None = None
-    address: str | None = None
-
-
-class UserOut(BaseModel):
-    id: int
-    email: str
-    is_active: bool
-    role: UserRole
-    created_at: str
-
-
-class UserWithProfileOut(UserOut):
-    profile: ProfileOut | None = None
-
-
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class IncidentBranch(str, Enum):
+    CENTRAL = "central"
+    AUSTIN_NORTH = "austin_north"
+    DALLAS_UPTOWN = "dallas_uptown"
+    HOUSTON_MED_CENTER = "houston_med_center"
+    SAN_ANTONIO_WEST = "san_antonio_west"
+    MIAMI_BRICKELL =
