@@ -3,16 +3,19 @@
 **/__pycache__/
 *.pyc
 **/.pytest_cache/
+services/api/data/
 
 # Node / Next.js
 **/node_modules/
 **/.next/
 **/dist/
 **/build/
+.vite/
 
 # Env files
 .env
 .env.local
+*.env
 !.env.example
 
 # Local runtime data
