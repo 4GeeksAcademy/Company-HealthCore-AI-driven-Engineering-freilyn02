@@ -16,3 +16,5 @@ DB_PATH = DATA_DIR / DB_FILENAME
 
 db = TinyDB(DB_PATH)
 suppliers_table = db.table("suppliers")
+users_table = db.table("users")
+profiles_table = db.table("profiles")
