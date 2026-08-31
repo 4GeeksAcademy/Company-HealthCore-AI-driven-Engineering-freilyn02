@@ -1,9 +1,15 @@
+feature/error-handling-audit
+import logging
+
+from fastapi import FastAPI, HTTPException, Request
+
 """FastAPI app: HealthCore API — Auth, Supplier Directory, and Centralized Incident Manager."""
 from typing import List, Optional
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi import Query as QueryParam
+ main
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,7 +41,13 @@ from models import (
     VALID_STATUS_TRANSITIONS,
 )
 
+feature/error-handling-audit
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="HealthCore — Centralized Incident Manager")
+
 app = FastAPI(title="HealthCore API")
+main
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,7 +88,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    print(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    logger.exception(f"Unhandled error on {request.method} {request.url.path}")
     return JSONResponse(
         status_code=500,
         content={"message": "Internal server error"},
@@ -303,8 +315,13 @@ def update_incident_status(incident_id: int, payload: IncidentStatusUpdate):
     try:
         current_enum = next(s for s in VALID_STATUS_TRANSITIONS if s.value == current_status)
     except StopIteration:
-        # data integrity issue, not a client error
-        raise
+        logger.error(
+            f"Data integrity issue: incident {incident_id} has unrecognized status '{current_status}'"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="This incident has an invalid status and cannot be updated. Contact support.",
+        )
 
     allowed = VALID_STATUS_TRANSITIONS[current_enum]
     if payload.status not in allowed:

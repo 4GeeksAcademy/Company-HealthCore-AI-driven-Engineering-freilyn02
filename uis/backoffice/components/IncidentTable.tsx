@@ -11,6 +11,7 @@ interface Props {
   loading: boolean;
   error: string | null;
   onUpdated: (updated: Incident) => void;
+  onRetry: () => void;
 }
 
 const STATUS_BADGE_CLASS: Record<IncidentStatus, string> = {
@@ -20,7 +21,9 @@ const STATUS_BADGE_CLASS: Record<IncidentStatus, string> = {
   discarded: "border-[rgba(16,16,16,0.14)] bg-[#f2f1ef] text-[#5f5a54]",
 };
 
-export default function IncidentTable({ incidents, loading, error, onUpdated }: Props) {
+const FALLBACK_BADGE_CLASS = "border-[rgba(16,16,16,0.14)] bg-[#f2f1ef] text-[#5f5a54]";
+
+export default function IncidentTable({ incidents, loading, error, onUpdated, onRetry }: Props) {
   const [savingById, setSavingById] = useState<Record<string, boolean>>({});
   const [errorById, setErrorById] = useState<Record<string, string | null>>({});
 
@@ -48,9 +51,15 @@ export default function IncidentTable({ incidents, loading, error, onUpdated }: 
 
   if (error) {
     return (
-      <p className="rounded-xl border border-[#b3261e]/20 bg-[#b3261e]/5 px-3 py-2 text-sm font-semibold text-[#b3261e]">
-        {error}
-      </p>
+      <div className="rounded-xl border border-[#b3261e]/20 bg-[#b3261e]/5 px-3 py-2 text-sm font-semibold text-[#b3261e]">
+        <p className="mb-2">{error}</p>
+        <button
+          onClick={onRetry}
+          className="rounded-full border border-[#b3261e]/40 bg-white px-3 py-1 text-xs font-semibold text-[#b3261e] transition hover:bg-[#b3261e]/10"
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
@@ -74,23 +83,25 @@ export default function IncidentTable({ incidents, loading, error, onUpdated }: 
         {incidents.map((inc) => {
           const saving = !!savingById[inc.id];
           const rowError = errorById[inc.id];
-          const nextOptions = VALID_STATUS_TRANSITIONS[inc.status];
+          const nextOptions = VALID_STATUS_TRANSITIONS[inc.status] ?? [];
           const isFinal = nextOptions.length === 0;
 
           return (
             <tr key={inc.id} className="border-t border-[rgba(16,16,16,0.06)] align-top text-sm">
               <td className="px-4 py-3 font-semibold">{inc.title}</td>
-              <td className="px-4 py-3">{CATEGORY_LABELS[inc.category]}</td>
-              <td className="px-4 py-3">{ORIGIN_LABELS[inc.origin]}</td>
-              <td className="px-4 py-3">{BRANCH_LABELS[inc.branch]}</td>
+              <td className="px-4 py-3">{CATEGORY_LABELS[inc.category] ?? "Unknown"}</td>
+              <td className="px-4 py-3">{ORIGIN_LABELS[inc.origin] ?? "Unknown"}</td>
+              <td className="px-4 py-3">{BRANCH_LABELS[inc.branch] ?? "Unknown"}</td>
               <td className="px-4 py-3">
                 <select
                   value={inc.status}
                   disabled={saving || isFinal}
                   onChange={(e) => handleStatusChange(inc.id, e.target.value as IncidentStatus)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold disabled:opacity-70 ${STATUS_BADGE_CLASS[inc.status]}`}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold disabled:opacity-70 ${
+                    STATUS_BADGE_CLASS[inc.status] ?? FALLBACK_BADGE_CLASS
+                  }`}
                 >
-                  <option value={inc.status}>{STATUS_LABELS[inc.status]}</option>
+                  <option value={inc.status}>{STATUS_LABELS[inc.status] ?? inc.status}</option>
                   {nextOptions.map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABELS[s]}

@@ -77,6 +77,7 @@ export default function IncidentList() {
         loading={loadingList}
         error={listError}
         onUpdated={handleUpdated}
+        onRetry={loadIncidents}
       />
     </div>
   );
