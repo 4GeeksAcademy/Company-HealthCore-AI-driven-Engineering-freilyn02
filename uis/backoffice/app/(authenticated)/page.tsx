@@ -1,6 +1,6 @@
 "use client";
 
-import { calculateCandidateStats } from "../lib/candidateStats";
+import { calculateCandidateStats } from "@/lib/candidateStats";
 
 export default function BackofficeHome() {
   const stats = calculateCandidateStats({
