@@ -1,0 +1,33 @@
+services:
+  uis:
+    build:
+      context: ./uis
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - ./uis:/uis
+      - /uis/website/node_modules
+      - /uis/backoffice/node_modules
+      - /uis/website/.next
+      - /uis/backoffice/.next
+    env_file:
+      - .env
+    networks:
+      - monorepo-dev
+
+  services:
+    build:
+      context: ./services/api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+    env_file:
+      - .env
+    networks:
+      - monorepo-dev
+
+networks:
+  monorepo-dev:
+    name: monorepo-dev
