@@ -38,12 +38,14 @@ from models import (
     VALID_STATUS_TRANSITIONS,
 )
 from telemetry import register_telemetry_routes
+from telemetry_report.router import register_telemetry_report_routes
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HealthCore API")
 
 register_telemetry_routes(app)
+register_telemetry_report_routes(app)
 
 app.add_middleware(
     CORSMiddleware,
