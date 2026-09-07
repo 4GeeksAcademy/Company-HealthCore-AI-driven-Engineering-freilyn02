@@ -5,10 +5,22 @@ import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { listProducts, createInboundOrder } from "@/lib/inventory";
 import { ApiError } from "@/lib/api";
-import type { MedicalSupply } from "@/types/inventory";
+import { track } from "@/services/telemetry";
+import type { MedicalSupply, SupplyCategory } from "@/types/inventory";
 
 // Clinic IDs range from 1-12 (9 US clinics, 3 UK clinics) per CONTEXT-healthcore.md.
 const CLINIC_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
+
+// Maps the app's real supply categories to the telemetry schema's allowed
+// values (docs/telemetry/event-schemas.json), since they were defined
+// independently and don't share the same vocabulary.
+const TELEMETRY_CATEGORY_MAP: Record<SupplyCategory, string> = {
+  medications: "medication",
+  ppe: "ppe",
+  wound_care: "consumable",
+  diagnostics: "consumable",
+  consumables: "consumable",
+};
 
 export default function InboundOrderPage() {
   const searchParams = useSearchParams();
@@ -54,12 +66,26 @@ export default function InboundOrderPage() {
 
     setSubmitting(true);
     try {
-      await createInboundOrder({
+      const order = await createInboundOrder({
         supply_id: Number(supplyId),
         quantity: Number(quantity),
         vendor_name: vendorName,
         clinic_id: Number(clinicId),
       });
+
+      const selectedProduct = products.find((p) => p.id === Number(supplyId));
+      if (selectedProduct) {
+        track("inbound_order_created", {
+          orderId: String(order.id),
+          clinic_id: String(order.clinic_id),
+          country: selectedProduct.country,
+          product_id: String(selectedProduct.id),
+          product_category: TELEMETRY_CATEGORY_MAP[selectedProduct.category],
+          quantity: order.quantity,
+          vendor_id: order.vendor_name,
+        });
+      }
+
       setSuccess(true);
       // Clear the form (README requirement: success -> clear form + confirmation banner).
       setSupplyId("");

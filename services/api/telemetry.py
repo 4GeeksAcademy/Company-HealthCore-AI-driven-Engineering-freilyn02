@@ -15,6 +15,17 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("telemetry")
 
+# Uvicorn does not configure the root logger, so a logger with no explicit
+# handler silently drops INFO-level messages (Python's logging.lastResort
+# handler only surfaces WARNING and above). Attaching a handler here
+# guarantees these logs are visible regardless of uvicorn's own config.
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    logger.addHandler(_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
 
 # ---- Input schemas ----
 

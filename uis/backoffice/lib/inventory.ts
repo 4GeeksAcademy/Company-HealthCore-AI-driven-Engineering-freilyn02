@@ -6,6 +6,7 @@
 
 import { getToken, clearToken } from "./auth";
 import { ApiError } from "./api";
+import { track } from "@/services/telemetry";
 import type {
   MedicalSupply,
   SupplyDeliveryCreate,
@@ -26,9 +27,20 @@ async function inventoryFetch<T>(path: string, options?: RequestInit): Promise<T
     ...options?.headers,
   };
 
+  const method = options?.method ?? "GET";
+  const startedAt = performance.now();
   const res = await fetch(`${base}${path}`, {
     ...options,
     headers,
+  });
+
+  // Technical baseline: performance. Captured for every inventory request
+  // through this shared client, regardless of success/failure status.
+  track("api_latency_recorded", {
+    endpoint: path,
+    method,
+    status_code: res.status,
+    duration_ms: Math.round(performance.now() - startedAt),
   });
 
   if (res.status === 401) {
