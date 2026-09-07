@@ -4,6 +4,7 @@
 *.pyc
 **/.pytest_cache/
 services/api/data/
+.coverage
 
 # Node / Next.js
 **/node_modules/
@@ -25,3 +26,6 @@ services/api/data/
 # OS
 .DS_Store
 Thumbs.db
+**/.coverage
+
+**/.coverage
