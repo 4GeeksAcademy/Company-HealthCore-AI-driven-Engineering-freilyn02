@@ -152,7 +152,7 @@ class ValidationErrorBody(BaseModel):
 
 
 # ============================================================================
-# Supplier Directory
+# Suppliers (Supplier Directory)
 # ============================================================================
 # Input and output schemas are kept separate: `updated_at` and `id`
 # are server-managed and never accepted from clients.
@@ -178,7 +178,6 @@ class SupplierCountry(str, Enum):
 
 
 # ---- Input schemas (what the client sends) ----
-
 class SupplierCreate(BaseModel):
     name: str = Field(..., min_length=1)
     country: SupplierCountry
@@ -196,7 +195,6 @@ class SupplierStatusPatch(BaseModel):
 
 
 # ---- Output schema (what the API returns) ----
-
 class SupplierOut(BaseModel):
     id: int
     name: str
@@ -208,7 +206,7 @@ class SupplierOut(BaseModel):
 
 
 # ============================================================================
-# Authentication (Users & Profiles)
+# Users & Profiles (Authentication)
 # ============================================================================
 
 class UserRole(str, Enum):
@@ -218,7 +216,6 @@ class UserRole(str, Enum):
 
 
 # ---- Input schemas (what the client sends) ----
-
 class UserCreate(BaseModel):
     email: str = Field(..., min_length=1)
     password: str = Field(..., min_length=8)
@@ -244,7 +241,6 @@ class LoginRequest(BaseModel):
 
 
 # ---- Output schemas (what the API returns) ----
-
 class ProfileOut(BaseModel):
     id: int
     user_id: int
