@@ -1,0 +1,372 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HealthCore Telemetry Event Schemas",
+  "description": "Event envelope + per-event property schemas for HealthCore's telemetry plan (Phase 1). Every event validates against the 'eventEnvelope' definition plus its own specific definition below.",
+  "definitions": {
+    "eventEnvelope": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "timestamp",
+        "sessionId",
+        "userId",
+        "event_type",
+        "schemaVersion",
+        "requestId",
+        "properties"
+      ],
+      "properties": {
+        "eventId": { "type": "string", "format": "uuid" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "sessionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "event_type": { "type": "string", "pattern": "^[a-z]+_[a-z_]+$" },
+        "schemaVersion": { "type": "string" },
+        "requestId": { "type": "string" },
+        "properties": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "inbound_order_created": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "inbound_order_created" },
+            "properties": {
+              "type": "object",
+              "required": ["orderId", "clinic_id", "country", "product_id", "product_category", "quantity", "vendor_id"],
+              "properties": {
+                "orderId": { "type": "string" },
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "product_id": { "type": "string" },
+                "product_category": { "type": "string", "enum": ["medication", "ppe", "consumable", "equipment"] },
+                "quantity": { "type": "integer", "minimum": 1 },
+                "vendor_id": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "outbound_order_created": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "outbound_order_created" },
+            "properties": {
+              "type": "object",
+              "required": ["orderId", "clinic_id", "country", "product_id", "product_category", "quantity"],
+              "properties": {
+                "orderId": { "type": "string" },
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "product_id": { "type": "string" },
+                "product_category": { "type": "string", "enum": ["medication", "ppe", "consumable", "equipment"] },
+                "quantity": { "type": "integer", "minimum": 1 },
+                "department": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "stock_threshold_triggered": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "stock_threshold_triggered" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "product_id", "product_category", "current_stock", "threshold"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "product_id": { "type": "string" },
+                "product_category": { "type": "string", "enum": ["medication", "ppe", "consumable", "equipment"] },
+                "current_stock": { "type": "integer", "minimum": 0 },
+                "threshold": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "direct_stock_edit_rejected": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "direct_stock_edit_rejected" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "product_id", "attempted_action"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "product_id": { "type": "string" },
+                "attempted_action": { "type": "string" },
+                "attempted_quantity": { "type": "integer" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "supply_expiry_flagged": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "supply_expiry_flagged" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "product_id", "product_category", "batch_id", "expiry_date", "days_until_expiry"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "product_id": { "type": "string" },
+                "product_category": { "type": "string", "enum": ["medication", "ppe", "consumable", "equipment"] },
+                "batch_id": { "type": "string" },
+                "expiry_date": { "type": "string", "format": "date" },
+                "days_until_expiry": { "type": "integer" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "order_validation_failed": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "order_validation_failed" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "order_type", "validation_error_code", "field"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "order_type": { "type": "string", "enum": ["inbound", "outbound"] },
+                "product_id": { "type": ["string", "null"] },
+                "validation_error_code": { "type": "string" },
+                "field": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "inventory_module_accessed": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "inventory_module_accessed" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "role"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "role": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "section_viewed": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "section_viewed" },
+            "properties": {
+              "type": "object",
+              "required": ["section_name", "clinic_id", "country"],
+              "properties": {
+                "section_name": { "type": "string" },
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "order_flow_abandoned": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "order_flow_abandoned" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "order_type", "step_reached"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "order_type": { "type": "string", "enum": ["inbound", "outbound"] },
+                "step_reached": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "product_search_performed": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "product_search_performed" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "search_term_hash", "result_count"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "search_term_hash": { "type": "string" },
+                "result_count": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "login_failed": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "login_failed" },
+            "properties": {
+              "type": "object",
+              "required": ["country", "failure_reason"],
+              "properties": {
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "clinic_id": { "type": "string" },
+                "failure_reason": { "type": "string", "enum": ["invalid_credentials", "account_locked", "mfa_failed"] },
+                "attempt_number": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "session_expired": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "session_expired" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "session_duration_seconds"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "session_duration_seconds": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "permission_denied": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "permission_denied" },
+            "properties": {
+              "type": "object",
+              "required": ["clinic_id", "country", "attempted_action", "required_role"],
+              "properties": {
+                "clinic_id": { "type": "string" },
+                "country": { "type": "string", "enum": ["US", "UK"] },
+                "attempted_action": { "type": "string" },
+                "required_role": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "api_latency_recorded": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "api_latency_recorded" },
+            "properties": {
+              "type": "object",
+              "required": ["endpoint", "method", "status_code", "duration_ms"],
+              "properties": {
+                "endpoint": { "type": "string" },
+                "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+                "status_code": { "type": "integer" },
+                "duration_ms": { "type": "integer", "minimum": 0 },
+                "clinic_id": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+
+    "frontend_error_caught": {
+      "allOf": [
+        { "$ref": "#/definitions/eventEnvelope" },
+        {
+          "properties": {
+            "event_type": { "const": "frontend_error_caught" },
+            "properties": {
+              "type": "object",
+              "required": ["page", "error_type", "error_message"],
+              "properties": {
+                "page": { "type": "string" },
+                "error_type": { "type": "string" },
+                "error_message": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}
