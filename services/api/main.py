@@ -1,15 +1,10 @@
-feature/error-handling-audit
+﻿"""FastAPI app: HealthCore API - Auth, Supplier Directory, and Centralized Incident Manager."""
 import logging
-
-from fastapi import FastAPI, HTTPException, Request
-
-"""FastAPI app: HealthCore API — Auth, Supplier Directory, and Centralized Incident Manager."""
 from typing import List, Optional
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi import Query as QueryParam
- main
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -41,13 +36,9 @@ from models import (
     VALID_STATUS_TRANSITIONS,
 )
 
-feature/error-handling-audit
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="HealthCore — Centralized Incident Manager")
-
 app = FastAPI(title="HealthCore API")
-main
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,12 +53,10 @@ IncidentQuery = Query()
 # Business-rule failures raise HTTPException(400, ...) with the exact
 # {field, message} shape the reference solution requires. Anything else
 # (a real bug, a TinyDB error, etc.) is caught here and turned into a
-# generic 500 body — the real exception is never leaked to the client.
+# generic 500 body - the real exception is never leaked to the client.
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    # Pydantic/FastAPI validation errors default to 422 with a list shape.
-    # The reference solution requires 400 with a single {field, message}.
     first_error = exc.errors()[0]
     field = ".".join(str(part) for part in first_error["loc"] if part != "body")
     return JSONResponse(
@@ -78,9 +67,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    # If detail is already a {field, message} dict (our 400 business-rule
-    # errors), return it unwrapped. Otherwise (e.g. 404 with a string
-    # detail), keep FastAPI's normal {"detail": ...} shape.
     if isinstance(exc.detail, dict) and "field" in exc.detail and "message" in exc.detail:
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -98,8 +84,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # --- Helpers (Incident Manager) ------------------------------------------
 
 def _doc_to_incident(doc: dict) -> Incident:
-    # doc may carry internal-only keys (e.g. _seed_source_id) — Incident
-    # ignores unknown fields by default, so they never leak into responses.
     return Incident(id=str(doc.doc_id), **doc)
 
 
