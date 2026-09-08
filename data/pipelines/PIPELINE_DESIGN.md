@@ -140,3 +140,98 @@ New module `services/reporting/`, kept separate from `services/telemetry/`. No a
 - [x] `telemetry_events` is read-only; `services/telemetry/analysis.py` and `GET /telemetry/report` are untouched.
 - [x] Destination lives under the `reporting` schema, not `public`.
 - [x] Purpose names the CEO-facing business deliverable, not a technical metric.
+
+---
+
+## Implementation Notes (Parts 2–3)
+
+Two points where the shipped implementation diverges intentionally from
+this Part 1 design, documented here for traceability:
+
+- **Clinic count:** this document (Part 1) says "12 clinics." By the
+  time `CONTEXT.md`'s final branch list was settled, it defined 14
+  branches, one of which (`central`) is an internal/customer-complaint
+  catch-all rather than a physical clinic. `CLINIC_BRANCHES` in
+  `data/process/transforms.py` therefore treats **13 branches** as the
+  source of truth, derived directly from `IncidentBranch`, instead of
+  hardcoding "12" anywhere in the pipeline.
+- **`services/reporting/`:** Section 9 above calls for a new module
+  kept separate from `services/telemetry/`. In the shipped API, the 3
+  reporting endpoints (`GET /reporting/pipeline-runs/latest`, `POST
+  /reporting/pipeline-runs`, `GET
+  /reporting/monthly-clinic-supply-performance`) live directly in
+  `services/api/main.py` as thin route handlers, each delegating to a
+  function in `data/pipelines/pipeline.py` — no aggregation logic is
+  duplicated at the route layer, which preserves the spirit of Section
+  9 even though the routes were not split into their own module.
+
+Also per Part 3's storage substrate: this monorepo uses **TinyDB**
+(`services/api/data/db.json`), not the Supabase/Postgres destination
+table described in Section 5 — the upsert logic (keyed on
+`clinic_id` + `month_start`) is the same idempotency mechanism,
+implemented against TinyDB's query API instead of a SQL `ON CONFLICT`
+clause.
+
+## Part 3 — Running the Pipeline and Tests
+
+### Prerequisites
+
+From the repo root, install the pipeline's runtime dependencies (not
+bundled with the frontend's `package.json`):
+
+```bash
+pip install prefect tinydb pytest
+```
+
+The following empty files make `data/` and `tests/` importable as
+Python packages, which `pipeline.py` and `test_pipeline.py` rely on
+via a `sys.path` bootstrap:
+
+- `data/__init__.py`
+- `data/process/__init__.py`
+- `data/pipelines/__init__.py`
+- `tests/__init__.py`
+- `tests/pipelines/__init__.py`
+
+### Running the unit tests
+
+```bash
+python -m pytest tests/pipelines/test_pipeline.py -v
+```
+
+12 tests covering: 4 KPI transform functions (hand-calculated inputs),
+2 defensive tests against malformed events, 2 tests against
+`validate_supply_events`'s silent-drop behavior, 1 full aggregation
+test hand-checked against the CONTEXT KPI definitions, 1
+currency-separation test (Section 4: never mix USD/GBP in one row),
+and 2 tests for the month-grain / reprocessing-window helpers.
+
+### Running the full ETL pipeline
+
+```bash
+python data/pipelines/pipeline.py
+```
+
+This runs the main flow (`monthly_clinic_supply_performance_flow`),
+which orchestrates 4 subflows in sequence:
+
+1. `extract-telemetry-events` — simulates reading `telemetry_events`
+2. `transform-business-kpis` — validates events, aggregates into the
+   4 KPIs (delegates to pure helpers in `data/process/transforms.py`)
+3. `load-weekly-location-performance` — idempotent upsert into
+   `reporting_monthly_clinic_supply_performance` (TinyDB)
+4. `notify-ops` — optional, non-blocking run-summary notification
+
+Exit code is `0` on success, `1` if the run finishes in a `partial` or
+`failed` state (see `if __name__ == "__main__"` in `pipeline.py`).
+
+### Viewing the results
+
+- **API**: with the backend running (`python -m uvicorn main:app
+  --reload --port 8000` from `services/api/`), `GET
+  /reporting/monthly-clinic-supply-performance` returns the latest
+  computed rows.
+- **Dashboard**: with the frontend running (`npm run dev` from
+  `uis/backoffice/`), the board-ready view is at `/reporting` —
+  requires `NEXT_PUBLIC_API_URL` in `.env.local` to point at the
+  running backend.
