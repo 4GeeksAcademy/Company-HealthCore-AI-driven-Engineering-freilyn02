@@ -1,4 +1,4 @@
-﻿"""FastAPI app: HealthCore API - Auth, Supplier Directory, and Centralized Incident Manager."""
+"""FastAPI app: HealthCore API - Auth, Supplier Directory, Centralized Incident Manager, Inventory Management, and Business Performance Reporting."""
 import logging
 import sys
 from pathlib import Path
@@ -11,13 +11,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import SQLModel
 from tinydb import Query
 
 import repository
 import users_repository
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
-from database import incidents_table
+from database import engine, incidents_table
+from routers.inventory import router as inventory_router
 from models import (
     Incident,
     IncidentCreate,
@@ -37,6 +39,7 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
+from telemetry import register_telemetry_routes
 
 # --- Business Performance Pipeline integration ------------------------------
 # data/pipelines/pipeline.py lives outside services/api, so it isn't on
@@ -61,12 +64,25 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HealthCore API")
 
+register_telemetry_routes(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(inventory_router)
+
+
+@app.on_event("startup")
+def on_startup():
+    # Creates medical_supplies / supply_deliveries / supply_consumptions in
+    # Supabase if they don't exist yet. Fine for learning; a real production
+    # setup would use Alembic migrations instead.
+    SQLModel.metadata.create_all(engine)
+
 
 IncidentQuery = Query()
 
