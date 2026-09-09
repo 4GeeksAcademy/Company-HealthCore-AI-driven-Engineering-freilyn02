@@ -1,26 +1,25 @@
-feature/error-handling-audit
+"""FastAPI app: HealthCore API - Auth, Supplier Directory, Centralized Incident Manager, Inventory Management, and Business Performance Reporting."""
 import logging
-
-from fastapi import FastAPI, HTTPException, Request
-
-"""FastAPI app: HealthCore API — Auth, Supplier Directory, and Centralized Incident Manager."""
+import sys
+from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi import Query as QueryParam
- main
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlmodel import SQLModel
 from tinydb import Query
 
 import repository
 import users_repository
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
-from database import incidents_table
+from database import engine, incidents_table
+from routers.inventory import router as inventory_router
 from models import (
     Incident,
     IncidentCreate,
@@ -40,14 +39,32 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
+from telemetry import register_telemetry_routes
 
-feature/error-handling-audit
+# --- Business Performance Pipeline integration ------------------------------
+# data/pipelines/pipeline.py lives outside services/api, so it isn't on
+# Python's import path by default. We add its containing folder here, once,
+# at import time - this endpoint module only ever *calls* functions defined
+# in pipeline.py, it never re-implements ETL logic itself (per
+# PIPELINE_DESIGN.md section 9 / evaluation checklist: "endpoints duplicate
+# pipeline logic instead of importing from data/pipelines/" is a listed
+# common mistake to avoid).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PIPELINES_DIR = REPO_ROOT / "data" / "pipelines"
+if str(PIPELINES_DIR) not in sys.path:
+    sys.path.insert(0, str(PIPELINES_DIR))
+
+from pipeline import (  # noqa: E402 - must follow sys.path setup above
+    get_latest_pipeline_run,
+    get_monthly_clinic_supply_performance,
+    trigger_pipeline_run,
+)
+
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="HealthCore — Centralized Incident Manager")
-
 app = FastAPI(title="HealthCore API")
-main
+
+register_telemetry_routes(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,13 +73,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(inventory_router)
+
+
+@app.on_event("startup")
+def on_startup():
+    # Creates medical_supplies / supply_deliveries / supply_consumptions in
+    # Supabase if they don't exist yet. Fine for learning; a real production
+    # setup would use Alembic migrations instead.
+    SQLModel.metadata.create_all(engine)
+
+
 IncidentQuery = Query()
 
 # --- Error handling (Incident Manager) ----------------------------------
 # Business-rule failures raise HTTPException(400, ...) with the exact
 # {field, message} shape the reference solution requires. Anything else
 # (a real bug, a TinyDB error, etc.) is caught here and turned into a
-# generic 500 body — the real exception is never leaked to the client.
+# generic 500 body - the real exception is never leaked to the client.
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -98,7 +126,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # --- Helpers (Incident Manager) ------------------------------------------
 
 def _doc_to_incident(doc: dict) -> Incident:
-    # doc may carry internal-only keys (e.g. _seed_source_id) — Incident
+    # doc may carry internal-only keys (e.g. _seed_source_id) - Incident
     # ignores unknown fields by default, so they never leak into responses.
     return Incident(id=str(doc.doc_id), **doc)
 
@@ -338,3 +366,34 @@ def update_incident_status(incident_id: int, payload: IncidentStatusUpdate):
     )
     updated = incidents_table.get(doc_id=incident_id)
     return _doc_to_incident(updated)
+
+
+# ---- Reporting (Business Performance Pipeline) ----
+# These endpoints are a thin HTTP surface only - all ETL/aggregation logic
+# lives in data/pipelines/pipeline.py and is imported above, never
+# reimplemented here (PIPELINE_DESIGN.md section 9).
+
+@app.get("/reporting/pipeline-runs/latest")
+def get_latest_pipeline_run_route():
+    run = get_latest_pipeline_run()
+    if run is None:
+        raise HTTPException(status_code=404, detail="No pipeline runs found")
+    return run
+
+
+@app.post("/reporting/pipeline-runs", status_code=202)
+def trigger_pipeline_run_route():
+    return trigger_pipeline_run()
+
+
+@app.get("/reporting/monthly-clinic-supply-performance")
+def get_monthly_clinic_supply_performance_route(
+    month_start: Optional[str] = QueryParam(default=None),
+):
+    rows = get_monthly_clinic_supply_performance(month_start)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No reporting data found for the requested month",
+        )
+    return rows
