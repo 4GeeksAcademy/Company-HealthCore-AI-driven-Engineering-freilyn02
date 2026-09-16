@@ -1,0 +1,59 @@
+services:
+  uis:
+    build:
+      context: ./uis
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - ./uis:/uis
+      - /uis/website/node_modules
+      - /uis/backoffice/node_modules
+      - /uis/website/.next
+      - /uis/backoffice/.next
+    env_file:
+      - .env
+    networks:
+      - monorepo-dev
+
+  services:
+    build:
+      context: ./services/api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api:/app
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - monorepo-dev
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    # noeviction: if Redis runs out of memory, it refuses new writes instead
+    # of silently deleting queued messages. For a task queue, losing a
+    # message is worse than a write failing loudly.
+    command: redis-server --maxmemory-policy noeviction
+    networks:
+      - monorepo-dev
+
+  flower:
+    image: mher/flower:2.0
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - monorepo-dev
+
+networks:
+  monorepo-dev:
+    name: monorepo-dev

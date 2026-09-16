@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime, timezone
 
+from celery.result import AsyncResult
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi import Query as QueryParam
 from fastapi.exceptions import RequestValidationError
@@ -15,12 +16,13 @@ import repository
 import users_repository
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
+from celery_app import celery_app
 from database import incidents_table
+from dlq_models import init_dlq_table
 from models import (
     Incident,
     IncidentCreate,
     IncidentStatusUpdate,
-    IncidentSummary,
     ProfileOut,
     ProfileUpdate,
     SupplierCreate,
@@ -35,6 +37,7 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
+from tasks import generate_incident_summary_task
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,20 @@ app.add_middleware(
 )
 
 IncidentQuery = Query()
+
+# Celery task status -> API status contract (never leak raw Celery state names)
+TASK_STATUS_MAP = {
+    "PENDING": "pending",
+    "STARTED": "started",
+    "SUCCESS": "success",
+    "FAILURE": "failure",
+}
+
+
+@app.on_event("startup")
+def on_startup():
+    init_dlq_table()
+
 
 # --- Error handling (Incident Manager) ----------------------------------
 # Business-rule failures raise HTTPException(400, ...) with the exact
@@ -265,27 +282,26 @@ def list_incidents(
     return [_doc_to_incident(doc) for doc in docs]
 
 
-@app.get("/api/incidents/summary", response_model=IncidentSummary)
-def get_summary():
-    docs = incidents_table.all()
+# ---- Incident summary report (async — see tasks.py) ----
+@app.post("/api/incidents/summary", status_code=202)
+def generate_incident_summary():
+    """Enqueues the summary aggregation as a background task instead of
+    computing it inline. Returns immediately with a task_id; poll
+    GET /tasks/{task_id} for the result."""
+    task = generate_incident_summary_task.delay()
+    return JSONResponse(status_code=202, content={"task_id": task.id})
 
-    by_status: dict[str, int] = {}
-    by_category: dict[str, int] = {}
-    by_origin: dict[str, int] = {}
-    by_branch: dict[str, int] = {}
 
-    for doc in docs:
-        by_status[doc["status"]] = by_status.get(doc["status"], 0) + 1
-        by_category[doc["category"]] = by_category.get(doc["category"], 0) + 1
-        by_origin[doc["origin"]] = by_origin.get(doc["origin"], 0) + 1
-        by_branch[doc["branch"]] = by_branch.get(doc["branch"], 0) + 1
-
-    return IncidentSummary(
-        by_status=by_status,
-        by_category=by_category,
-        by_origin=by_origin,
-        by_branch=by_branch,
-    )
+@app.get("/tasks/{task_id}")
+def get_task_status(task_id: str):
+    result = AsyncResult(task_id, app=celery_app)
+    status = TASK_STATUS_MAP.get(result.status, "pending")
+    payload = {"task_id": task_id, "status": status, "result": None}
+    if status == "success":
+        payload["result"] = result.result
+    elif status == "failure":
+        payload["result"] = str(result.result)
+    return payload
 
 
 @app.get("/api/incidents/{incident_id}", response_model=Incident)
