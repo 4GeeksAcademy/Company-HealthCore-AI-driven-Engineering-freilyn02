@@ -32,6 +32,12 @@ export default function RootLayout({
               <Link href="/incidents" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
                 Incident Manager
               </Link>
+              <Link href="/inventory/products" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
+                Medical Supplies
+              </Link>
+              <Link href="/inventory/orders" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
+                Order History
+              </Link>
               <Link href="/account/profile" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
                 My Profile
               </Link>
