@@ -13,8 +13,12 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "bcrypt==4.0.1",
     "python-multipart>=0.0.32",
+feature/business-performance-pipeline
+    "prefect>=3.8.5",
+=======
     "sqlmodel>=0.0.42",
     "psycopg2-binary>=2.9.12",
+ main
 ]
 
 [tool.uv]

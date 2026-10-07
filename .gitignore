@@ -26,6 +26,10 @@ services/api/data/
 # OS
 .DS_Store
 Thumbs.db
+ feature/business-performance-pipeline
+# Coverage reports
+
 **/.coverage
 
+ main
 **/.coverage

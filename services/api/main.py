@@ -1,5 +1,12 @@
+ feature/business-performance-pipeline
+﻿"""FastAPI app: HealthCore API - Auth, Supplier Directory, and Centralized Incident Manager."""
+import logging
+import sys
+from pathlib import Path
+=======
 """FastAPI app: HealthCore API — Auth, Supplier Directory, Centralized Incident Manager, and Inventory Management."""
 import logging
+ main
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -40,12 +47,37 @@ from models import (
 from telemetry import register_telemetry_routes
 from telemetry_report.router import register_telemetry_report_routes
 
+feature/business-performance-pipeline
+# --- Business Performance Pipeline integration ------------------------------
+# data/pipelines/pipeline.py lives outside services/api, so it isn't on
+# Python's import path by default. We add its containing folder here, once,
+# at import time - this endpoint module only ever *calls* functions defined
+# in pipeline.py, it never re-implements ETL logic itself (per
+# PIPELINE_DESIGN.md section 9 / evaluation checklist: "endpoints duplicate
+# pipeline logic instead of importing from data/pipelines/" is a listed
+# common mistake to avoid).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PIPELINES_DIR = REPO_ROOT / "data" / "pipelines"
+if str(PIPELINES_DIR) not in sys.path:
+    sys.path.insert(0, str(PIPELINES_DIR))
+
+from pipeline import (  # noqa: E402 - must follow sys.path setup above
+    get_latest_pipeline_run,
+    get_monthly_clinic_supply_performance,
+    trigger_pipeline_run,
+)
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="HealthCore API")
+=======
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HealthCore API")
 
 register_telemetry_routes(app)
 register_telemetry_report_routes(app)
+main
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,7 +103,7 @@ IncidentQuery = Query()
 # Business-rule failures raise HTTPException(400, ...) with the exact
 # {field, message} shape the reference solution requires. Anything else
 # (a real bug, a TinyDB error, etc.) is caught here and turned into a
-# generic 500 body — the real exception is never leaked to the client.
+# generic 500 body - the real exception is never leaked to the client.
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
@@ -107,7 +139,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # --- Helpers (Incident Manager) ------------------------------------------
 
 def _doc_to_incident(doc: dict) -> Incident:
-    # doc may carry internal-only keys (e.g. _seed_source_id) — Incident
+    # doc may carry internal-only keys (e.g. _seed_source_id) - Incident
     # ignores unknown fields by default, so they never leak into responses.
     return Incident(id=str(doc.doc_id), **doc)
 
@@ -347,3 +379,34 @@ def update_incident_status(incident_id: int, payload: IncidentStatusUpdate):
     )
     updated = incidents_table.get(doc_id=incident_id)
     return _doc_to_incident(updated)
+
+
+# ---- Reporting (Business Performance Pipeline) ----
+# These endpoints are a thin HTTP surface only - all ETL/aggregation logic
+# lives in data/pipelines/pipeline.py and is imported above, never
+# reimplemented here (PIPELINE_DESIGN.md section 9).
+
+@app.get("/reporting/pipeline-runs/latest")
+def get_latest_pipeline_run_route():
+    run = get_latest_pipeline_run()
+    if run is None:
+        raise HTTPException(status_code=404, detail="No pipeline runs found")
+    return run
+
+
+@app.post("/reporting/pipeline-runs", status_code=202)
+def trigger_pipeline_run_route():
+    return trigger_pipeline_run()
+
+
+@app.get("/reporting/monthly-clinic-supply-performance")
+def get_monthly_clinic_supply_performance_route(
+    month_start: Optional[str] = QueryParam(default=None),
+):
+    rows = get_monthly_clinic_supply_performance(month_start)
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="No reporting data found for the requested month",
+        )
+    return rows
