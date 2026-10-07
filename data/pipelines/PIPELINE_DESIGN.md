@@ -140,6 +140,7 @@ New module `services/reporting/`, kept separate from `services/telemetry/`. No a
 - [x] `telemetry_events` is read-only; `services/telemetry/analysis.py` and `GET /telemetry/report` are untouched.
 - [x] Destination lives under the `reporting` schema, not `public`.
 - [x] Purpose names the CEO-facing business deliverable, not a technical metric.
+feature/business-performance-pipeline
 
 ---
 
@@ -235,3 +236,4 @@ Exit code is `0` on success, `1` if the run finishes in a `partial` or
   `uis/backoffice/`), the board-ready view is at `/reporting` —
   requires `NEXT_PUBLIC_API_URL` in `.env.local` to point at the
   running backend.
+ main
