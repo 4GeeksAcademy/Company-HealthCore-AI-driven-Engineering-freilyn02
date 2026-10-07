@@ -278,6 +278,10 @@ class IncidentBranch(str, Enum):
 
 # Display labels — UI must always show these, never the raw enum value
 BRANCH_LABELS: dict[str, str] = {
+ feature/message-queue-async-tasks
+    IncidentBranch.CENTRAL: "Central — Austin Main Clinic",
+    IncidentBranch.AUSTIN_NORTH: "Austin — North",
+
  feature/background-processes
     IncidentBranch.CENTRAL: "Central - Austin Main Clinic",
     IncidentBranch.AUSTIN_NORTH: "Austin - North",
@@ -289,7 +293,8 @@ BRANCH_LABELS: dict[str, str] = {
     IncidentBranch.CENTRAL: "Central — Austin Main Clinic",
     IncidentBranch.AUSTIN_NORTH: "Austin — North",
  main
- main
+
+main
     IncidentBranch.DALLAS_UPTOWN: "Dallas Uptown",
     IncidentBranch.HOUSTON_MED_CENTER: "Houston Medical Center",
     IncidentBranch.SAN_ANTONIO_WEST: "San Antonio West",
@@ -336,6 +341,9 @@ VALID_STATUS_TRANSITIONS: dict[IncidentStatus, set[IncidentStatus]] = {
 
 class IncidentCreate(BaseModel):
     """Payload for POST /api/incidents. `title` and `description` must never
+ feature/message-queue-async-tasks
+    contain patient-identifying data — this is enforced only client-side via
+
  feature/background-processes
     contain patient-identifying data - this is enforced only client-side via
 
@@ -344,7 +352,7 @@ feature/business-performance-pipeline
 
     contain patient-identifying data — this is enforced only client-side via
  main
- main
+
     the visible warning; the API itself does not (and cannot) detect PII."""
 
     title: str = Field(min_length=1, max_length=200)
@@ -388,6 +396,13 @@ class ValidationErrorBody(BaseModel):
     """Shape required by the reference solution for 400 responses."""
 
     field: str
+ feature/message-queue-async-tasks
+    message: str
+
+
+# ============================================================================
+# Supplier Directory
+
 feature/background-processes
     message: str
 
@@ -398,6 +413,7 @@ feature/background-processes
 
 # ============================================================================
 # Suppliers (Supplier Directory)
+
 # ============================================================================
 # Input and output schemas are kept separate: `updated_at` and `id`
 # are server-managed and never accepted from clients.
@@ -451,6 +467,8 @@ class SupplierOut(BaseModel):
 
 
 # ============================================================================
+ feature/message-queue-async-tasks
+# Auth (Users / Profiles)
 # Users & Profiles (Authentication)
 # ============================================================================
 
@@ -508,5 +526,8 @@ class UserWithProfileOut(UserOut):
 
 class TokenOut(BaseModel):
     access_token: str
+ feature/message-queue-async-tasks
+    token_type: str = "bearer"
     token_type: str = "bearer"
  main
+
