@@ -13,11 +13,23 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "bcrypt==4.0.1",
     "python-multipart>=0.0.32",
+ feature/message-queue-async-tasks
     "celery>=5.6.3",
     "redis>=8.1.0",
     "flower>=2.1.0",
     "sqlmodel>=0.0.42",
     "psycopg2-binary>=2.9.13",
+
+feature/background-processes
+    "prefect>=3.8.5",
+
+feature/business-performance-pipeline
+    "prefect>=3.8.5",
+ main
+    "sqlmodel>=0.0.42",
+    "psycopg2-binary>=2.9.12",
+ main
+main
 ]
 
 [tool.uv]
