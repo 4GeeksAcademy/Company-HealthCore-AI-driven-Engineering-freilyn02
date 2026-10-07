@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 # ---- Supplier Directory ----
+ feature/background-processes
 
 class SupplierStatus(str, Enum):
     ACTIVE = "active"
@@ -120,6 +121,116 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+
+
+class SupplierStatus(str, Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+
+
+class SupplierCategory(str, Enum):
+    MEDICAL_EQUIPMENT = "Medical Equipment"
+    PHARMACEUTICALS = "Pharmaceuticals"
+    PPE_CONSUMABLES = "PPE & Medical Consumables"
+    LAB_SUPPLIES = "Lab Supplies"
+    IT_TELEHEALTH = "IT & Telehealth Equipment"
+    FACILITY_MAINTENANCE = "Facility & Maintenance"
+    OFFICE_ADMIN = "Office & Administrative Supplies"
+
+
+class SupplierCountry(str, Enum):
+    US = "US"
+    UK = "UK"
+
+
+# ---- Input schemas (what the client sends) ----
+class SupplierCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    country: SupplierCountry
+    categories: List[SupplierCategory] = Field(..., min_length=1)
+    rate: float = Field(..., gt=0)
+    status: SupplierStatus = SupplierStatus.ACTIVE
+
+
+class SupplierRatePatch(BaseModel):
+    rate: float = Field(..., gt=0)
+
+
+class SupplierStatusPatch(BaseModel):
+    status: SupplierStatus
+
+
+# ---- Output schema (what the API returns) ----
+class SupplierOut(BaseModel):
+    id: int
+    name: str
+    country: SupplierCountry
+    categories: List[SupplierCategory]
+    rate: float
+    status: SupplierStatus
+    updated_at: str
+
+
+# ---- User & Profile models (Authentication) ----
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MANAGER = "manager"
+    USER = "user"
+
+
+# ---- Input schemas (what the client sends) ----
+class UserCreate(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=8)
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserCredentialsUpdate(BaseModel):
+    email: str | None = None
+    role: UserRole | None = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+# ---- Output schemas (what the API returns) ----
+class ProfileOut(BaseModel):
+    id: int
+    user_id: int
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    is_active: bool
+    role: UserRole
+    created_at: str
+
+
+class UserWithProfileOut(UserOut):
+    profile: ProfileOut | None = None
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+ main
 # --- Centralized Incident Manager -------------------------------------------
 # Enums mirror CONTEXT.md exactly — see CONTEXT-healthcore.es.md
 
@@ -167,8 +278,18 @@ class IncidentBranch(str, Enum):
 
 # Display labels — UI must always show these, never the raw enum value
 BRANCH_LABELS: dict[str, str] = {
+ feature/background-processes
     IncidentBranch.CENTRAL: "Central - Austin Main Clinic",
     IncidentBranch.AUSTIN_NORTH: "Austin - North",
+
+ feature/business-performance-pipeline
+    IncidentBranch.CENTRAL: "Central - Austin Main Clinic",
+    IncidentBranch.AUSTIN_NORTH: "Austin - North",
+
+    IncidentBranch.CENTRAL: "Central — Austin Main Clinic",
+    IncidentBranch.AUSTIN_NORTH: "Austin — North",
+ main
+ main
     IncidentBranch.DALLAS_UPTOWN: "Dallas Uptown",
     IncidentBranch.HOUSTON_MED_CENTER: "Houston Medical Center",
     IncidentBranch.SAN_ANTONIO_WEST: "San Antonio West",
@@ -215,7 +336,15 @@ VALID_STATUS_TRANSITIONS: dict[IncidentStatus, set[IncidentStatus]] = {
 
 class IncidentCreate(BaseModel):
     """Payload for POST /api/incidents. `title` and `description` must never
+ feature/background-processes
     contain patient-identifying data - this is enforced only client-side via
+
+feature/business-performance-pipeline
+    contain patient-identifying data - this is enforced only client-side via
+
+    contain patient-identifying data — this is enforced only client-side via
+ main
+ main
     the visible warning; the API itself does not (and cannot) detect PII."""
 
     title: str = Field(min_length=1, max_length=200)
@@ -259,4 +388,125 @@ class ValidationErrorBody(BaseModel):
     """Shape required by the reference solution for 400 responses."""
 
     field: str
+feature/background-processes
     message: str
+
+    message: str
+ feature/business-performance-pipeline
+
+
+
+# ============================================================================
+# Suppliers (Supplier Directory)
+# ============================================================================
+# Input and output schemas are kept separate: `updated_at` and `id`
+# are server-managed and never accepted from clients.
+
+class SupplierStatus(str, Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+
+
+class SupplierCategory(str, Enum):
+    MEDICAL_EQUIPMENT = "Medical Equipment"
+    PHARMACEUTICALS = "Pharmaceuticals"
+    PPE_CONSUMABLES = "PPE & Medical Consumables"
+    LAB_SUPPLIES = "Lab Supplies"
+    IT_TELEHEALTH = "IT & Telehealth Equipment"
+    FACILITY_MAINTENANCE = "Facility & Maintenance"
+    OFFICE_ADMIN = "Office & Administrative Supplies"
+
+
+class SupplierCountry(str, Enum):
+    US = "US"
+    UK = "UK"
+
+
+# ---- Input schemas (what the client sends) ----
+class SupplierCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    country: SupplierCountry
+    categories: List[SupplierCategory] = Field(..., min_length=1)
+    rate: float = Field(..., gt=0)
+    status: SupplierStatus = SupplierStatus.ACTIVE
+
+
+class SupplierRatePatch(BaseModel):
+    rate: float = Field(..., gt=0)
+
+
+class SupplierStatusPatch(BaseModel):
+    status: SupplierStatus
+
+
+# ---- Output schema (what the API returns) ----
+class SupplierOut(BaseModel):
+    id: int
+    name: str
+    country: SupplierCountry
+    categories: List[SupplierCategory]
+    rate: float
+    status: SupplierStatus
+    updated_at: str
+
+
+# ============================================================================
+# Users & Profiles (Authentication)
+# ============================================================================
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MANAGER = "manager"
+    USER = "user"
+
+
+# ---- Input schemas (what the client sends) ----
+class UserCreate(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=8)
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserCredentialsUpdate(BaseModel):
+    email: str | None = None
+    role: UserRole | None = None
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+# ---- Output schemas (what the API returns) ----
+class ProfileOut(BaseModel):
+    id: int
+    user_id: int
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    is_active: bool
+    role: UserRole
+    created_at: str
+
+
+class UserWithProfileOut(UserOut):
+    profile: ProfileOut | None = None
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+ main

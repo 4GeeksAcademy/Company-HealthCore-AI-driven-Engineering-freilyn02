@@ -1,7 +1,18 @@
+< feature/background-processes
 """FastAPI app: HealthCore API - Auth, Supplier Directory, Centralized Incident Manager, Inventory Management, and Business Performance Reporting."""
 import logging
 import sys
 from pathlib import Path
+
+ feature/business-performance-pipeline
+﻿"""FastAPI app: HealthCore API - Auth, Supplier Directory, and Centralized Incident Manager."""
+import logging
+import sys
+from pathlib import Path
+
+"""FastAPI app: HealthCore API — Auth, Supplier Directory, Centralized Incident Manager, and Inventory Management."""
+import logging
+main
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -40,7 +51,9 @@ from models import (
     VALID_STATUS_TRANSITIONS,
 )
 from telemetry import register_telemetry_routes
+from telemetry_report.router import register_telemetry_report_routes
 
+feature/business-performance-pipeline
 # --- Business Performance Pipeline integration ------------------------------
 # data/pipelines/pipeline.py lives outside services/api, so it isn't on
 # Python's import path by default. We add its containing folder here, once,
@@ -62,9 +75,36 @@ from pipeline import (  # noqa: E402 - must follow sys.path setup above
 
 logger = logging.getLogger(__name__)
 
+ feature/background-processes
+# --- Business Performance Pipeline integration ------------------------------
+# data/pipelines/pipeline.py lives outside services/api, so it isn't on
+# Python's import path by default. We add its containing folder here, once,
+# at import time - this endpoint module only ever *calls* functions defined
+# in pipeline.py, it never re-implements ETL logic itself (per
+# PIPELINE_DESIGN.md section 9 / evaluation checklist: "endpoints duplicate
+# pipeline logic instead of importing from data/pipelines/" is a listed
+# common mistake to avoid).
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PIPELINES_DIR = REPO_ROOT / "data" / "pipelines"
+if str(PIPELINES_DIR) not in sys.path:
+    sys.path.insert(0, str(PIPELINES_DIR))
+
+from pipeline import (  # noqa: E402 - must follow sys.path setup above
+    get_latest_pipeline_run,
+    get_monthly_clinic_supply_performance,
+    trigger_pipeline_run,
+)
+
+
+app = FastAPI(title="HealthCore API")
+ main
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="HealthCore API")
 
 register_telemetry_routes(app)
+register_telemetry_report_routes(app)
+main
 
 app.add_middleware(
     CORSMiddleware,
@@ -396,4 +436,7 @@ def get_monthly_clinic_supply_performance_route(
             status_code=404,
             detail="No reporting data found for the requested month",
         )
+ feature/background-processes
     return rows
+
+ main
