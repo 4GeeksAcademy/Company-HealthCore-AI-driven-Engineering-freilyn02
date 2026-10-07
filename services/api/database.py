@@ -1,5 +1,4 @@
 """Centralized database initialization for the HealthCore API.
-
 Two separate databases, per the Milestone 5 architecture:
 - TinyDB: users, profiles, suppliers, incidents (existing, unchanged).
 - Supabase/PostgreSQL via SQLModel: inventory (MedicalSupply, SupplyDelivery,

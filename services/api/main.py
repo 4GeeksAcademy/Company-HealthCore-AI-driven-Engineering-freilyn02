@@ -37,10 +37,13 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
+from telemetry import register_telemetry_routes
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HealthCore API")
+
+register_telemetry_routes(app)
 
 app.add_middleware(
     CORSMiddleware,

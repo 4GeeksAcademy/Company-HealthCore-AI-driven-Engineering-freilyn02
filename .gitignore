@@ -4,6 +4,7 @@
 *.pyc
 **/.pytest_cache/
 services/api/data/
+.coverage
 
 # Node / Next.js
 **/node_modules/

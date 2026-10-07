@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { listProducts, createOutboundOrder } from "@/lib/inventory";
 import { ApiError } from "@/lib/api";
-import type { MedicalSupply, ConsumptionType } from "@/types/inventory";
+import { track } from "@/services/telemetry";
+import type { MedicalSupply, ConsumptionType, SupplyCategory } from "@/types/inventory";
 
 // Clinic IDs range from 1-12 (9 US clinics, 3 UK clinics) per CONTEXT-healthcore.md.
 const CLINIC_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -13,6 +14,17 @@ const CLINIC_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
 const CONSUMPTION_TYPE_LABELS: Record<ConsumptionType, string> = {
   clinical_use: "Clinical Use",
   expiry_waste: "Expiry / Waste",
+};
+
+// Maps the app's real supply categories to the telemetry schema's allowed
+// values (docs/telemetry/event-schemas.json), since they were defined
+// independently and don't share the same vocabulary.
+const TELEMETRY_CATEGORY_MAP: Record<SupplyCategory, string> = {
+  medications: "medication",
+  ppe: "ppe",
+  wound_care: "consumable",
+  diagnostics: "consumable",
+  consumables: "consumable",
 };
 
 export default function OutboundOrderPage() {
@@ -69,12 +81,27 @@ export default function OutboundOrderPage() {
 
     setSubmitting(true);
     try {
-      await createOutboundOrder({
+      const order = await createOutboundOrder({
         supply_id: Number(supplyId),
         quantity: Number(quantity),
         consumption_type: consumptionType as ConsumptionType,
         clinic_id: Number(clinicId),
       });
+
+      if (selectedProduct) {
+        track("outbound_order_created", {
+          orderId: String(order.id),
+          clinic_id: String(order.clinic_id),
+          country: selectedProduct.country,
+          product_id: String(selectedProduct.id),
+          product_category: TELEMETRY_CATEGORY_MAP[selectedProduct.category],
+          quantity: order.quantity,
+          // department is not collected by this form (consumption_type is a
+          // different concept) and is optional in the telemetry schema, so
+          // it's omitted rather than filled with an incorrect value.
+        });
+      }
+
       setSuccess(true);
       // Clear the form (README requirement: success -> clear form + confirmation banner).
       setSupplyId("");
