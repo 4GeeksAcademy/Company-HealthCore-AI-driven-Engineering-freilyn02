@@ -1,0 +1,22 @@
+{
+  "model": "log-linear growth + RandomForest seasonality",
+  "random_state": 42,
+  "train_period": [
+    "2016-01-01",
+    "2023-12-01"
+  ],
+  "test_period": [
+    "2024-01-01",
+    "2025-12-01"
+  ],
+  "metrics": {
+    "MSE": 8974756604.757893,
+    "RMSE": 94735.19200781667,
+    "MAPE_pct": 2.43425800535146,
+    "PSI": 0.09325194049401977,
+    "Gini": 0.9361250523578063,
+    "K2_R2": 0.9290798254756677
+  },
+  "growth_pct_per_year": 4.156006451388894,
+  "band_coverage_on_test": 0.75
+}
