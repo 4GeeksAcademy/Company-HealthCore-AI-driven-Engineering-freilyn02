@@ -1,0 +1,13 @@
+{
+  "run_id": "run-a9cba78b",
+  "question": "",
+  "answer": null,
+  "error": "empty_question",
+  "trace_steps": [
+    {
+      "node": "receive_question",
+      "order": 1,
+      "output_summary": "empty question"
+    }
+  ]
+}

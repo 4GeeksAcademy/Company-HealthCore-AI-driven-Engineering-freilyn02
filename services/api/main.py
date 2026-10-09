@@ -42,6 +42,7 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
+from routers.agent import router as agent_router
 from tasks import generate_incident_summary_task
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ app.add_middleware(
 )
 
 app.include_router(inventory_router)
+app.include_router(agent_router)
 app.include_router(knowledge_router)
 
 

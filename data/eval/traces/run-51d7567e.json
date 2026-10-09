@@ -1,0 +1,23 @@
+{
+  "run_id": "run-51d7567e",
+  "question": "What is the refund policy?",
+  "answer": "Based on policy: Refunds are accepted within 30 days.",
+  "error": null,
+  "trace_steps": [
+    {
+      "node": "receive_question",
+      "order": 1,
+      "output_summary": "received: What is the refund policy?"
+    },
+    {
+      "node": "retrieve",
+      "order": 2,
+      "output_summary": "1 chunks"
+    },
+    {
+      "node": "query",
+      "order": 3,
+      "output_summary": "answer of 53 chars"
+    }
+  ]
+}

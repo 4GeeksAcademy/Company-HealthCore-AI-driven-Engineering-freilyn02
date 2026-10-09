@@ -1,0 +1,23 @@
+{
+  "run_id": "run-4a934981",
+  "question": "Something unrelated",
+  "answer": "I don't have information about that in the HealthCore knowledge base.",
+  "error": null,
+  "trace_steps": [
+    {
+      "node": "receive_question",
+      "order": 1,
+      "output_summary": "received: Something unrelated"
+    },
+    {
+      "node": "retrieve",
+      "order": 2,
+      "output_summary": "0 chunks"
+    },
+    {
+      "node": "no_context",
+      "order": 3,
+      "output_summary": "honest 'I don't know' answer"
+    }
+  ]
+}
