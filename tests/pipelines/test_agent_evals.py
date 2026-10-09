@@ -1,10 +1,16 @@
 import pytest
 
-from agent import nodes
+from agent import nodes, tracing
 from agent.graph import agent_graph, run_agent
 from agent.tracing import load_trace
 
 FAKE_CHUNKS = [{"text": "Refunds are accepted within 30 days.", "score": 0.9}]
+
+
+@pytest.fixture(autouse=True)
+def isolated_trace_dir(tmp_path, monkeypatch):
+    """Write traces to a temp folder so tests never pollute the repository."""
+    monkeypatch.setattr(tracing, "TRACE_DIR", tmp_path)
 
 
 @pytest.fixture
