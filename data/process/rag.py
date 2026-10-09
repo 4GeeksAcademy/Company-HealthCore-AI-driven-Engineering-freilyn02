@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -59,6 +60,12 @@ SECTION_OVERRIDES: dict[tuple[str, int], str] = {
 }
 
 _LIST_ITEM = re.compile(r"^(?:-\s|\d+\.\s)")
+
+# --- Embeddings API settings --------------------------------------------------
+# The gateway rate-limits requests (HTTP 429). These statuses are temporary, so embed()
+# waits and retries instead of failing: 1s, 2s, 4s, 8s, 16s (or the server's Retry-After).
+RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+EMBED_MAX_RETRIES = 5
 
 
 # =============================================================================
@@ -158,6 +165,15 @@ def _llm_settings() -> tuple[str, str, str]:
     return base_url, api_key, model
 
 
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    """Seconds to wait before retrying: the server's Retry-After if valid, else exponential."""
+    retry_after = response.headers.get("retry-after", "")
+    try:
+        return min(max(float(retry_after), 0.0), 60.0)
+    except ValueError:
+        return float(min(2**attempt, 30))
+
+
 def embed(text: str) -> list[float]:
     """Return the embedding vector of `text`.
 
@@ -169,12 +185,16 @@ def embed(text: str) -> list[float]:
         raise ValueError("embed() needs a non-empty text.")
 
     base_url, api_key, model = _llm_settings()
-    response = httpx.post(
-        f"{base_url}/v1/embeddings",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": model, "input": text},
-        timeout=30.0,
-    )
+    for attempt in range(EMBED_MAX_RETRIES + 1):
+        response = httpx.post(
+            f"{base_url}/v1/embeddings",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model, "input": text},
+            timeout=30.0,
+        )
+        if response.status_code not in RETRYABLE_STATUS_CODES or attempt == EMBED_MAX_RETRIES:
+            break
+        time.sleep(_retry_delay(response, attempt))
     response.raise_for_status()
     vector = response.json()["data"][0]["embedding"]
     if not isinstance(vector, list) or not all(isinstance(x, (int, float)) for x in vector):
