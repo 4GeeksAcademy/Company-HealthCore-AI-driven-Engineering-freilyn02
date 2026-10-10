@@ -1,0 +1,23 @@
+{
+  "run_id": "run-1aa45efb",
+  "question": "Does HealthCore accept Medicaid at Georgia clinics?",
+  "answer": "No, HealthCore does not currently accept Medicaid at Georgia clinics. Medicaid is accepted only at Texas and Florida locations.",
+  "error": null,
+  "trace_steps": [
+    {
+      "node": "receive_question",
+      "order": 1,
+      "output_summary": "received: Does HealthCore accept Medicaid at Georgia clinics?"
+    },
+    {
+      "node": "retrieve",
+      "order": 2,
+      "output_summary": "3 chunks"
+    },
+    {
+      "node": "query",
+      "order": 3,
+      "output_summary": "answer of 127 chars"
+    }
+  ]
+}
