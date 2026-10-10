@@ -15,6 +15,12 @@ def _step(state: AgentState, node: str, summary: str) -> dict:
     }
 
 
+def _failure_summary(exc: Exception) -> str:
+    """Short, single-line error description for the trace (never sent to the API client)."""
+    message = " ".join(str(exc).split())[:150]
+    return f"failed: {type(exc).__name__}: {message}" if message else f"failed: {type(exc).__name__}"
+
+
 def receive_question(state: AgentState) -> dict:
     question = (state.get("question") or "").strip()
     if not question:
@@ -35,7 +41,7 @@ def retrieve_node(state: AgentState) -> dict:
     except Exception as exc:  # never leak a raw stack trace
         return {
             "error": "retrieval_failed",
-            "trace_steps": [_step(state, "retrieve", f"failed: {type(exc).__name__}")],
+            "trace_steps": [_step(state, "retrieve", _failure_summary(exc))],
         }
     chunks = chunks or []
     return {
@@ -57,7 +63,7 @@ def query_node(state: AgentState) -> dict:
     except Exception as exc:
         return {
             "error": "generation_failed",
-            "trace_steps": [_step(state, "query", f"failed: {type(exc).__name__}")],
+            "trace_steps": [_step(state, "query", _failure_summary(exc))],
         }
     return {
         "answer": answer,

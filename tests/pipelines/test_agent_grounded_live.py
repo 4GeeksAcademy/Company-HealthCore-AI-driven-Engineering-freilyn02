@@ -8,6 +8,7 @@ import os
 
 import pytest
 
+from agent import tracing
 from agent.graph import run_agent
 from agent.tracing import load_trace
 
@@ -16,10 +17,15 @@ pytestmark = pytest.mark.skipif(
     reason="Live eval: set RUN_LIVE_EVALS=1 (needs Qdrant + LLM credentials).",
 )
 
-# TODO: replace with a question whose answer is in the knowledge base document
-QUESTION = "What does the insurance coverage include?"
-# TODO: replace with a fact/word that must appear in a grounded answer
-EXPECTED_TERM = "coverage"
+# Known fact from docs/company-knowledge-base/healthcore-insurance-coverage.en.md:
+# Medicaid is accepted only at Texas and Florida clinics, not at Georgia.
+QUESTION = "Does HealthCore accept Medicaid at Georgia clinics?"
+EXPECTED_TERM = "texas"
+
+
+@pytest.fixture(autouse=True)
+def isolated_trace_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(tracing, "TRACE_DIR", tmp_path)
 
 
 def test_answer_is_grounded_in_real_knowledge_base():
@@ -27,7 +33,7 @@ def test_answer_is_grounded_in_real_knowledge_base():
     trace = load_trace(run_id)
     steps = {s["node"]: s for s in trace["trace_steps"]}
 
-    assert state["error"] is None
+    assert state["error"] is None, f"agent failed, trace: {trace['trace_steps']}"
     assert "query" in steps, "agent should have generated an answer from context"
     assert "no_context" not in steps, "retrieval found nothing for a known question"
     assert state["retrieved_context"], "expected at least one retrieved chunk"
