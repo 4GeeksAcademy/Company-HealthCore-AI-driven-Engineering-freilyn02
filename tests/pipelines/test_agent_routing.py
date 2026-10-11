@@ -1,14 +1,15 @@
 """Part 2 evals: routing between RAG and external tools, and the failure fallback.
 
-The HTTP client is stubbed ONLY here, in the test fixtures, so CI needs no running
-services. The production code under test still goes through the real tool code
-(typed contract, numeric timeout, GET-only) and the real graph.
+The MCP server is stubbed ONLY here, in the test fixtures, so CI needs no running
+services: `mcp_client.call_tool` is replaced by a fake that answers exactly like the real
+company-tools server (same tool names, argument contract and error codes). The production
+code under test is still the real tool adapters and the real graph. The real client <->
+server <-> OAuth path is covered by mcps/company-tools/tests and the PR evidence.
 """
 
-import httpx
 import pytest
 
-from agent import nodes, tools, tracing
+from agent import mcp_client, nodes, tools, tracing
 from agent.graph import run_agent
 from agent.router import classify_question
 from agent.tracing import load_trace
@@ -49,36 +50,50 @@ def rag_calls(monkeypatch):
     return calls
 
 
-def stub_http(monkeypatch, handler):
-    """Replace the tools' HTTP client factory with one backed by `handler`.
-    Returns the list of requests that were made."""
-    requests: list[httpx.Request] = []
+def stub_mcp(monkeypatch, handler):
+    """Replace the MCP call with `handler(tool_name, arguments) -> ToolCallResult`.
+    Returns the list of (tool_name, arguments) calls that were made."""
+    calls: list[tuple[str, dict]] = []
 
-    def recording_handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return handler(request)
+    def recording(name: str, arguments: dict) -> mcp_client.ToolCallResult:
+        calls.append((name, arguments))
+        return handler(name, arguments)
 
-    def fake_build_client(base_url: str) -> httpx.Client:
-        return httpx.Client(
-            base_url=base_url,
-            transport=httpx.MockTransport(recording_handler),
-            timeout=tools.TOOL_TIMEOUT_SECONDS,
-        )
-
-    monkeypatch.setattr(tools, "build_client", fake_build_client)
-    return requests
+    monkeypatch.setattr(mcp_client, "call_tool", recording)
+    return calls
 
 
-def incident_service_up(request: httpx.Request) -> httpx.Response:
-    if request.url.path == "/api/incidents/482":
-        return httpx.Response(200, json=TICKET_482)
-    if request.url.path == "/api/incidents" and request.url.params.get("status") == "open":
-        return httpx.Response(200, json=[{**TICKET_482, "status": "open"}])
-    return httpx.Response(404, json={"detail": "Incident not found"})
+def ok(data: dict) -> mcp_client.ToolCallResult:
+    return mcp_client.ToolCallResult(True, data=data)
 
 
-def incident_service_timeout(request: httpx.Request) -> httpx.Response:
-    raise httpx.ConnectTimeout("simulated timeout", request=request)
+def fail(code: str, message: str = "simulated") -> mcp_client.ToolCallResult:
+    return mcp_client.ToolCallResult(False, error_code=code, message=message)
+
+
+def _mcp_ticket(raw: dict) -> dict:
+    # what manage_incident_ticket returns: no description, integer ticket_id
+    return {
+        "ticket_id": int(raw["id"]), "title": raw["title"], "status": raw["status"],
+        "category": raw["category"], "origin": raw["origin"], "branch": raw["branch"],
+        "created_at": raw["created_at"], "updated_at": raw["updated_at"],
+    }
+
+
+def incident_service_up(name: str, arguments: dict) -> mcp_client.ToolCallResult:
+    if name == "manage_incident_ticket" and arguments == {"action": "get_status", "ticket_id": 482}:
+        return ok(_mcp_ticket(TICKET_482))
+    if name == "manage_incident_ticket":
+        return fail("TICKET_NOT_FOUND")
+    if name == "list_incident_tickets" and arguments.get("status") == "open":
+        return ok({"count": 1, "tickets": [{"ticket_id": 482, "title": TICKET_482["title"], "status": "open"}]})
+    if name == "list_incident_tickets":
+        return ok({"count": 0, "tickets": []})
+    return fail("UPSTREAM_ERROR")
+
+
+def incident_service_timeout(name: str, arguments: dict) -> mcp_client.ToolCallResult:
+    return fail("UPSTREAM_TIMEOUT")
 
 
 def nodes_run(run_id: str) -> list[str]:
@@ -87,7 +102,7 @@ def nodes_run(run_id: str) -> list[str]:
 
 # --------------------------------------------------------------------------- evals
 def test_eval_tool_routing_uses_ticket_tool_not_rag(monkeypatch, rag_calls):
-    requests = stub_http(monkeypatch, incident_service_up)
+    requests = stub_mcp(monkeypatch, incident_service_up)
 
     run_id, state = run_agent("What is the status of ticket 482?")
     trace = load_trace(run_id)
@@ -104,11 +119,12 @@ def test_eval_tool_routing_uses_ticket_tool_not_rag(monkeypatch, rag_calls):
     # the tool step records the HTTP outcome
     step = next(s for s in trace["trace_steps"] if s["node"] == "lookup_ticket")
     assert step["outcome"] == "success"
-    assert [r.method for r in requests] == ["GET"]
+    assert [c[0] for c in requests] == ["manage_incident_ticket"]
+    assert requests[0][1]["action"] == "get_status"
 
 
 def test_eval_rag_routing_uses_rag_not_tools(monkeypatch, rag_calls):
-    requests = stub_http(monkeypatch, incident_service_up)
+    requests = stub_mcp(monkeypatch, incident_service_up)
 
     run_id, state = run_agent("What is the no-show fee policy for Medicare patients?")
     trace = load_trace(run_id)
@@ -122,7 +138,7 @@ def test_eval_rag_routing_uses_rag_not_tools(monkeypatch, rag_calls):
 
 
 def test_eval_fallback_when_incident_service_times_out(monkeypatch, rag_calls):
-    stub_http(monkeypatch, incident_service_timeout)
+    stub_mcp(monkeypatch, incident_service_timeout)
 
     run_id, state = run_agent("What is the status of ticket 482?")
     trace = load_trace(run_id)
@@ -139,7 +155,7 @@ def test_eval_fallback_when_incident_service_times_out(monkeypatch, rag_calls):
 
 
 def test_ticket_not_found_is_honest(monkeypatch, rag_calls):
-    stub_http(monkeypatch, incident_service_up)
+    stub_mcp(monkeypatch, incident_service_up)
 
     run_id, state = run_agent("What is the status of ticket 999?")
     step = next(s for s in load_trace(run_id)["trace_steps"] if s["node"] == "lookup_ticket")
@@ -150,7 +166,7 @@ def test_ticket_not_found_is_honest(monkeypatch, rag_calls):
 
 
 def test_both_route_runs_tool_then_rag_and_merges(monkeypatch, rag_calls):
-    stub_http(monkeypatch, incident_service_up)
+    stub_mcp(monkeypatch, incident_service_up)
 
     run_id, state = run_agent(
         "What is the status of ticket 482 and what is the no-show fee policy?"
@@ -164,7 +180,7 @@ def test_both_route_runs_tool_then_rag_and_merges(monkeypatch, rag_calls):
 
 
 def test_both_route_with_tool_failure_still_answers_the_knowledge_part(monkeypatch, rag_calls):
-    stub_http(monkeypatch, incident_service_timeout)
+    stub_mcp(monkeypatch, incident_service_timeout)
 
     run_id, state = run_agent(
         "What is the status of ticket 482 and what is the no-show fee policy?"
@@ -176,24 +192,43 @@ def test_both_route_with_tool_failure_still_answers_the_knowledge_part(monkeypat
 
 
 # ------------------------------------------------------------------- tool contract
-def test_tools_are_read_only_get_requests(monkeypatch, rag_calls):
-    requests = stub_http(monkeypatch, incident_service_up)
+def test_agent_only_uses_read_only_mcp_operations(monkeypatch, rag_calls):
+    calls = stub_mcp(monkeypatch, incident_service_up)
 
     run_agent("What is the status of ticket 482?")
     run_agent("How many open tickets are there?")
 
-    assert requests and all(r.method == "GET" for r in requests)
+    assert calls
+    for name, arguments in calls:
+        assert name in {"list_incident_tickets", "query_inventory", "manage_incident_ticket"}
+        if name == "manage_incident_ticket":
+            assert arguments["action"] == "get_status"  # never create/update from the agent
 
 
-def test_every_request_has_an_explicit_numeric_timeout():
-    assert isinstance(tools.TOOL_TIMEOUT_SECONDS, float)
-    assert 0 < tools.TOOL_TIMEOUT_SECONDS <= 10
-    client = tools.build_client("http://localhost:8000")
-    assert client.timeout.read == tools.TOOL_TIMEOUT_SECONDS
+def test_old_direct_http_path_is_gone():
+    assert not hasattr(tools, "build_client")
+    assert not hasattr(tools, "INCIDENT_API_BASE_URL")
+
+
+def test_mcp_call_has_an_explicit_numeric_timeout():
+    assert isinstance(mcp_client.MCP_TIMEOUT_SECONDS, float)
+    assert 0 < mcp_client.MCP_TIMEOUT_SECONDS <= 30
+
+
+def test_missing_mcp_credentials_fall_back_honestly(monkeypatch, rag_calls):
+    for var in ("MCP_ACCESS_TOKEN", "MCP_TOKEN_URL", "MCP_CLIENT_ID", "MCP_CLIENT_SECRET"):
+        monkeypatch.delenv(var, raising=False)
+    mcp_client.reset_token_cache()
+
+    run_id, state = run_agent("What is the status of ticket 482?")  # real call_tool, no token
+
+    step = next(s for s in load_trace(run_id)["trace_steps"] if s["node"] == "lookup_ticket")
+    assert step["outcome"] == "http_error"
+    assert "couldn't confirm" in state["answer"]
 
 
 def test_ticket_list_by_status(monkeypatch, rag_calls):
-    stub_http(monkeypatch, incident_service_up)
+    stub_mcp(monkeypatch, incident_service_up)
 
     _, state = run_agent("How many open tickets are there?")
 
@@ -201,25 +236,15 @@ def test_ticket_list_by_status(monkeypatch, rag_calls):
 
 
 # ------------------------------------------------------------------ inventory tool
-def test_inventory_tool_logs_in_then_reads_with_get(monkeypatch, rag_calls):
-    monkeypatch.setenv("AGENT_SERVICE_EMAIL", "agent@healthcore.test")
-    monkeypatch.setenv("AGENT_SERVICE_PASSWORD", "secret")
+def test_inventory_goes_through_the_mcp_inventory_tool(monkeypatch, rag_calls):
+    def inventory_service(name, arguments):
+        assert name == "query_inventory" and "updates" not in arguments  # read-only call
+        return ok({"count": 1, "products": [
+            {"product_id": 1, "name": "Nitrile Gloves", "sku": "GLV-001", "category": "ppe",
+             "unit": "box", "country": "US", "current_stock": 42},
+        ]})
 
-    def inventory_service(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/auth/login":
-            return httpx.Response(200, json={"access_token": "t", "token_type": "bearer"})
-        assert request.headers["authorization"] == "Bearer t"
-        return httpx.Response(
-            200,
-            json=[
-                {"id": 1, "name": "Nitrile Gloves", "sku": "GLV-001", "category": "ppe",
-                 "unit": "box", "country": "US", "current_stock": 42},
-                {"id": 2, "name": "Syringes 5ml", "sku": "SYR-005", "category": "consumable",
-                 "unit": "box", "country": "US", "current_stock": 7},
-            ],
-        )
-
-    requests = stub_http(monkeypatch, inventory_service)
+    calls = stub_mcp(monkeypatch, inventory_service)
 
     run_id, state = run_agent("What is the stock of nitrile gloves?")
     trace = load_trace(run_id)
@@ -227,20 +252,26 @@ def test_inventory_tool_logs_in_then_reads_with_get(monkeypatch, rag_calls):
     assert trace["sources_used"] == ["inventory_tool"]
     assert "lookup_ticket" not in nodes_run(run_id), "tickets and inventory are separate tools"
     assert "Nitrile Gloves" in state["answer"] and "42" in state["answer"]
-    assert "Syringes" not in state["answer"]
-    assert [r.method for r in requests] == ["POST", "GET"]  # login, then read-only GET
-    assert requests[0].url.path == "/auth/login"
+    assert calls == [("query_inventory", {"query": "nitrile gloves"})]
 
 
-def test_inventory_without_credentials_falls_back_honestly(monkeypatch, rag_calls):
-    monkeypatch.delenv("AGENT_SERVICE_EMAIL", raising=False)
-    monkeypatch.delenv("AGENT_SERVICE_PASSWORD", raising=False)
-    stub_http(monkeypatch, lambda r: httpx.Response(500))
+def test_inventory_mcp_error_falls_back_honestly(monkeypatch, rag_calls):
+    stub_mcp(monkeypatch, lambda n, a: fail("UPSTREAM_ERROR", "no service credentials"))
 
     run_id, state = run_agent("What is the stock of nitrile gloves?")
 
     assert "handle_tool_failure" in nodes_run(run_id)
     assert "couldn't confirm the stock levels" in state["answer"]
+
+
+def test_expired_oauth_token_falls_back_honestly(monkeypatch, rag_calls):
+    stub_mcp(monkeypatch, lambda n, a: fail("AUTH_INVALID_TOKEN"))
+
+    run_id, state = run_agent("What is the status of ticket 482?")
+
+    step = next(s for s in load_trace(run_id)["trace_steps"] if s["node"] == "lookup_ticket")
+    assert step["outcome"] == "http_error"
+    assert state["error"] is None and "couldn't confirm" in state["answer"]
 
 
 # -------------------------------------------------------------------------- router
