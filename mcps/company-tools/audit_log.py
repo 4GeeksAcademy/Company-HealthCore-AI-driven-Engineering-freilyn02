@@ -31,6 +31,14 @@ def summarize_input(arguments: dict[str, Any] | None) -> dict[str, Any]:
     return {k: arguments[k] for k in _SAFE_INPUT_FIELDS if arguments.get(k) is not None}
 
 
+def _validation_message(exc: Exception) -> str | None:
+    """First lines of the validation error: they name the offending field."""
+    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+    # Drop pydantic's trailing documentation link, keep summary + field + reason.
+    lines = [line for line in lines if not line.startswith("For further information")]
+    return " | ".join(lines[:3])[:300] or None
+
+
 class InvocationLogMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         started = time.perf_counter()
@@ -47,7 +55,7 @@ class InvocationLogMiddleware(Middleware):
             raise ToolFailure(
                 ErrorCode.VALIDATION_ERROR,
                 tool=context.message.name,
-                message=str(exc).splitlines()[0][:300] if str(exc) else None,
+                message=_validation_message(exc),
             ) from exc
         except Exception:
             result = "error:INTERNAL_ERROR"

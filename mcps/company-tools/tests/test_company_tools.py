@@ -147,7 +147,7 @@ def test_create_requires_all_fields(mcp_server, token):
 def test_schema_violation_is_a_validation_error_too(mcp_server, token):
     is_error, err = call(mcp_server, token, "manage_incident_ticket",
                          {"action": "delete", "ticket_id": 1})
-    assert is_error and err["error_code"] == "VALIDATION_ERROR"
+    assert is_error and err["error_code"] == "VALIDATION_ERROR" and "action" in err["message"]
 
 
 def test_list_tickets_with_status_filter(mcp_server, token, apis):
