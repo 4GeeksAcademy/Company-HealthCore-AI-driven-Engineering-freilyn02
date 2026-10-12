@@ -43,7 +43,8 @@ DESCRIPTION = (
     "- action='update': send ONLY ticket_id and the target status. The Incidents Manager "
     "validates the lifecycle (open -> in_progress -> resolved / discarded); an invalid "
     "transition is rejected with VALIDATION_ERROR.\n"
-    "- action='get_status': send ticket_id (integer) to read the ticket's current status.\n"
+    "- action='get_status': send ticket_id (integer) to read the ticket's current status. "
+    "Any other field is ignored (this action only reads).\n"
     "Scopes: 'incidents:write' for create/update, 'incidents:read' for get_status. "
     "Errors carry a documented error_code (VALIDATION_ERROR, TICKET_NOT_FOUND, "
     "AUTH_INSUFFICIENT_SCOPE, UPSTREAM_TIMEOUT, UPSTREAM_ERROR)."
@@ -147,8 +148,8 @@ async def manage_incident_ticket(
     else:  # get_status
         require_scope(SCOPE_INCIDENTS_READ, TOOL_NAME)
         _require("ticket_id", ticket_id, action)
-        _reject_extra(action, {"status": status, "title": title, "description": description,
-                               "category": category, "origin": origin, "branch": branch})
+        # Read-only: unrelated fields are ignored instead of rejected, because form-based
+        # clients (e.g. MCP Playground) send every optional field with a pre-filled value.
         request = ("GET", f"/api/incidents/{ticket_id}", None)
 
     method, path, payload = request

@@ -138,6 +138,14 @@ def test_update_must_send_only_status(mcp_server, token):
     assert is_error and err["error_code"] == "VALIDATION_ERROR" and err["field"] == "title"
 
 
+def test_get_status_ignores_unrelated_fields_sent_by_form_clients(mcp_server, token):
+    is_error, result = call(mcp_server, token, "manage_incident_ticket", {
+        "action": "get_status", "ticket_id": 482, "status": "resolved", "title": "ignored",
+        "description": "ignored", "category": "other", "origin": "internal", "branch": "central",
+    })
+    assert not is_error and result["ticket_id"] == 482 and result["status"] == "open"
+
+
 def test_create_requires_all_fields(mcp_server, token):
     is_error, err = call(mcp_server, token, "manage_incident_ticket",
                          {"action": "create", "title": "Only a title"})
