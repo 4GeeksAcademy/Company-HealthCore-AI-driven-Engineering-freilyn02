@@ -104,10 +104,14 @@ def _error_from_response(response: httpx.Response) -> ToolFailure:
     if status in (400, 422):
         field, message = None, None
         try:
-            detail = response.json().get("detail")
+            body = response.json()
         except ValueError:
-            detail = None
-        if isinstance(detail, dict):  # {"field": ..., "message": ...} (project's 400 shape)
+            body = None
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(body, dict) and "field" in body and "message" in body:
+            # The real Incidents Manager unwraps its 400s: {"field": ..., "message": ...}
+            field, message = body["field"], body["message"]
+        elif isinstance(detail, dict):  # same shape, wrapped in "detail"
             field, message = detail.get("field"), detail.get("message")
         elif isinstance(detail, list) and detail:  # FastAPI's default 422 list
             first = detail[0]

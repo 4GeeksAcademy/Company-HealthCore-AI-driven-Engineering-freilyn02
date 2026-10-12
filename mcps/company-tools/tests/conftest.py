@@ -175,10 +175,11 @@ class FakeCompanyApis:
             if method == "PATCH" and parts[3:] == ["status"]:
                 new_status = json.loads(request.content)["status"]
                 if new_status not in VALID_TRANSITIONS[incident["status"]]:
-                    return httpx.Response(400, json={"detail": {
+                    # Real API shape: the 400 body is {"field", "message"} at the top level.
+                    return httpx.Response(400, json={
                         "field": "status",
                         "message": f"Cannot move from {incident['status']} to {new_status}.",
-                    }})
+                    })
                 incident["status"] = new_status
                 return httpx.Response(200, json=incident)
         return httpx.Response(404, json={"detail": "unknown route"})
