@@ -7,18 +7,11 @@ Two separate databases, per the Milestone 5 architecture:
 import os
 from pathlib import Path
 
- feature/message-queue-async-tasks
-
- feature/business-performance-pipeline
-from tinydb import TinyDB
-
 from dotenv import load_dotenv
 from sqlmodel import Session, create_engine
- main
 from tinydb import TinyDB
 
 load_dotenv()
- main
 
 # ---- TinyDB (auth, suppliers, incidents) ----
 DATA_DIR = Path(__file__).parent / "data"

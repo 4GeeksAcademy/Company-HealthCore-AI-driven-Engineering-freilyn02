@@ -27,8 +27,11 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # Inside the Compose network Qdrant is reachable by its service name.
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       - redis
+      - qdrant
     networks:
       - monorepo-dev
 
@@ -53,6 +56,18 @@ services:
       - redis
     networks:
       - monorepo-dev
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - monorepo-dev
+
+volumes:
+  qdrant_data:
 
 networks:
   monorepo-dev:
