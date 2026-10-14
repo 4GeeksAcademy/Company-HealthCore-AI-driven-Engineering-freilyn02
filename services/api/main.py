@@ -24,6 +24,7 @@ from database import engine, incidents_table
 from dlq_models import init_dlq_table
 from routers.inventory import router as inventory_router
 from routers.knowledge import router as knowledge_router
+from routers.rfp import router as rfp_router
 from models import (
     Incident,
     IncidentCreate,
@@ -84,6 +85,7 @@ app.add_middleware(
 app.include_router(inventory_router)
 app.include_router(agent_router)
 app.include_router(knowledge_router)
+app.include_router(rfp_router)
 
 
 @app.on_event("startup")
