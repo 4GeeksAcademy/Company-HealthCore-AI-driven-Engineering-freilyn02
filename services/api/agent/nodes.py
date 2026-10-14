@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 from data.pipelines.rag import generate_answer, retrieve  # reuse existing RAG code
 
 from . import tools as agent_tools
@@ -6,6 +8,10 @@ from .harness.casual import casual_reply
 from .harness.external_content import wrap_chunks
 from .harness.input_guards import check_input
 from .harness.output_guards import guard_output
+from .memory import flow as memory_flow
+from .memory import runtime as memory_runtime
+from .memory.store import MemoryEntry
+from .memory.turn import ProposedMemory, generate_turn
 from .prompts.system import CASUAL_FALLBACK, REDIRECT_SUFFIX
 from .router import RouteDecision, classify_question
 from .state import AgentState
@@ -69,20 +75,33 @@ def no_context_node(state: AgentState) -> dict:
 
 
 def query_node(state: AgentState) -> dict:
+    proposal = None
+    memories: list[MemoryEntry] = []
     try:
         # Retrieved text is DATA: neutralize instruction-like spans and wrap it in
         # <untrusted_source> tags (it travels in the user role, never the system role).
         safe_context = wrap_chunks(state["retrieved_context"])
-        answer = generate_answer(state["question"], safe_context)
+        if state.get("session_id"):
+            # MEM-092: ONE structured model call -> reply + optional memory_proposal.
+            # Same agent, one extra output field: no second call, no second agent.
+            memories = [MemoryEntry(**m) for m in state.get("memories") or []]
+            turn = generate_turn(state["question"], safe_context, memories)
+            answer = turn.reply
+            proposal = turn.memory_proposal.model_dump() if turn.memory_proposal else None
+        else:
+            answer = generate_answer(state["question"], safe_context)
     except Exception as exc:
         return {
             "error": "generation_failed",
             "trace_steps": [_step(state, "query", _failure_summary(exc))],
         }
-    return {
-        "answer": answer,
-        "trace_steps": [_step(state, "query", f"answer of {len(answer)} chars")],
-    }
+    summary = f"answer of {len(answer)} chars"
+    if state.get("session_id"):
+        summary += f", {len(memories)} approved memories in context"
+    update: dict = {"answer": answer, "trace_steps": [_step(state, "query", summary)]}
+    if proposal:
+        update["memory_proposal"] = proposal
+    return update
 
 
 # =============================================================================
@@ -264,3 +283,92 @@ def output_guard(state: AgentState) -> dict:
         "answer": verdict.answer,
         "trace_steps": [_step(state, "output_guard", f"sanitized: {names}")],
     }
+
+
+# =============================================================================
+# MEM-092: memory nodes. Every one is a no-op unless the request carries a session_id,
+# and every one FAILS SAFE: if the memory backend is down, the agent still answers
+# (without memory) and nothing is ever written.
+# =============================================================================
+def memory_resolve(state: AgentState) -> dict:
+    """If a memory proposal is pending, classify the user's message against it."""
+    session_id = state.get("session_id")
+    if not session_id:
+        return {}
+    try:
+        result = memory_flow.resolve_pending(
+            session_id,
+            state["question"],
+            pending=memory_runtime.get_pending_store(),
+            store=memory_runtime.get_store(),
+            audit=memory_runtime.get_audit_log(),
+        )
+    except Exception as exc:
+        return {"trace_steps": [_step(state, "memory_resolve", f"skipped: memory unavailable ({type(exc).__name__})")]}
+    if result.decision is None:  # nothing was pending: normal turn
+        return {}
+    return {
+        "question": result.question,  # what is still left to answer ("" = nothing)
+        "memory_notice": result.notice,
+        "trace_steps": [_step(state, "memory_resolve", f"pending proposal resolved: {result.decision}")],
+    }
+
+
+def memory_read(state: AgentState) -> dict:
+    """Explicit memory READ: approved memories relevant to this question."""
+    session_id = state.get("session_id")
+    if not session_id:
+        return {}
+    try:
+        found = memory_flow.read_memories(state["question"], memory_runtime.get_store())
+    except Exception as exc:
+        return {
+            "memories": [],
+            "trace_steps": [_step(state, "memory_read", f"skipped: memory unavailable ({type(exc).__name__})")],
+        }
+    return {
+        "memories": [asdict(entry) for entry in found],
+        "trace_steps": [_step(state, "memory_read", f"{len(found)} approved memories")],
+    }
+
+
+def memory_finalize(state: AgentState) -> dict:
+    """Add the memory notice and the memory proposal question to the reply, IN the same
+    conversation. Runs BEFORE the output guard, so the guard checks this text too.
+    Proposing never writes anything: the write only happens in memory_resolve."""
+    session_id = state.get("session_id")
+    if not session_id or state.get("error"):
+        return {}
+    parts: list[str] = []
+    notice = state.get("memory_notice")
+    if notice:
+        parts.append(notice)
+    if state.get("answer"):
+        parts.append(state["answer"])
+
+    steps: list[dict] = []
+    raw = state.get("memory_proposal")
+    if raw:
+        try:
+            question = memory_flow.propose(
+                session_id,
+                ProposedMemory(**raw),
+                state["question"],
+                pending=memory_runtime.get_pending_store(),
+                audit=memory_runtime.get_audit_log(),
+            )
+        except Exception as exc:
+            question = None
+            steps.append(_step(state, "memory_propose", f"skipped: memory unavailable ({type(exc).__name__})"))
+        if question:
+            parts.append(question)
+            steps.append(_step(state, "memory_propose", "proposal appended to the reply (nothing written yet)"))
+        elif not steps:
+            steps.append(_step(state, "memory_propose", "proposal discarded by the memory policy"))
+
+    if not notice and not raw:
+        return {}
+    update: dict = {"answer": "\n\n".join(parts)}
+    if steps:
+        update["trace_steps"] = steps
+    return update
