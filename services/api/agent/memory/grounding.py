@@ -22,6 +22,7 @@ _ALLOWED = {"healthcore"}  # the company name may appear even if the user did no
 _PROMISE = re.compile(
     r"\b(?:i|we)(?:['’]ve|\s+have)\s+(?:noted|recorded|saved|stored|logged)\b"
     r"|\b(?:i|we)(?:['’]ll|\s+will)\s+(?:remember|note|record|save|store|use|escalate|forward|flag|pass)\b"
+    r"|\bwill\s+be\s+(?:considered|noted|recorded|reviewed|escalated|forwarded|passed)\b"
     r"|\b(?:for|under)\s+review\b"
     r"|\b(?:be|been)\s+(?:reviewed|escalated|forwarded)\b"
     r"|\breviewed\s+by\b",
@@ -34,7 +35,10 @@ def _words(text: str) -> list[str]:
 
 
 def _forms(word: str) -> set[str]:
+    """The word plus its likely singular forms (fees -> fee, applies -> apply)."""
     forms = {word}
+    if word.endswith("ies") and len(word) > 4:
+        forms.add(word[:-3] + "y")
     for suffix in ("es", "s"):
         if word.endswith(suffix) and len(word) > 3:
             forms.add(word[: -len(suffix)])

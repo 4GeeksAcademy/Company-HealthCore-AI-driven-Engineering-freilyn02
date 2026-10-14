@@ -86,3 +86,8 @@ def test_propose_accepts_a_grounded_fact():
     question = propose("s1", proposed, MESSAGE, pending=pending, audit=audit, grounded_in=MESSAGE)
     assert GOOD_FACT in question and pending.get("s1").fact == GOOD_FACT
     assert [r.decision for r in audit.list()] == ["proposed"]
+
+
+def test_vague_promises_are_removed():
+    reply = "Our current policy states 50 USD. This note will be considered."
+    assert scrub_reply(reply) == "Our current policy states 50 USD."
