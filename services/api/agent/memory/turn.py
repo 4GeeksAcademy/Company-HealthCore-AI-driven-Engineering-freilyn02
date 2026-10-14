@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 from data.pipelines.rag import NO_INFO_MESSAGE, SYSTEM_PROMPT, _format_context
 
 from . import llm
+from .grounding import scrub_reply
 from .store import MemoryEntry
 
 
@@ -25,6 +26,7 @@ class TurnOutput(BaseModel):
 
 
 # Added to the SYSTEM role only. Retrieved text and memories travel in the user role.
+# The prompt rules below are a first line of defense; grounding.py enforces the key ones in code.
 MEMORY_RULES = """
 
 OUTPUT FORMAT (mandatory): answer with ONE JSON object and nothing else:
@@ -52,15 +54,18 @@ def _format_memories(memories: list[MemoryEntry]) -> str:
 
 
 def parse_turn(text: str) -> TurnOutput:
-    """Parse the model output. Malformed JSON never produces a proposal."""
+    """Parse the model output. Malformed JSON never produces a proposal.
+    The reply is always scrubbed of false claims ("I have noted...", "for review...")."""
     try:
         turn = TurnOutput.model_validate(llm.parse_json_object(text))
     except (ValueError, ValidationError):
         if (text or "").lstrip().startswith(("{", "```")):
             raise ValueError("The model returned malformed structured output.")
-        return TurnOutput(reply=(text or "").strip() or NO_INFO_MESSAGE)  # plain text: no proposal
+        plain = (text or "").strip() or NO_INFO_MESSAGE
+        return TurnOutput(reply=scrub_reply(plain))  # plain text: no proposal
     if not turn.reply.strip():
         return TurnOutput(reply=NO_INFO_MESSAGE)
+    turn.reply = scrub_reply(turn.reply)
     return turn
 
 

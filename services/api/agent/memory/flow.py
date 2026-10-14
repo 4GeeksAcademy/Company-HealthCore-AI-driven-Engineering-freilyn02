@@ -14,6 +14,7 @@ from datetime import datetime
 
 from . import confirm
 from .audit import AuditLog
+from .grounding import ungrounded_words
 from .policy import validate_fact
 from .proposal import MemoryProposal, PendingStore, audit_record, get_active_or_expire
 from .store import MemoryEntry, MemoryStore
@@ -83,8 +84,12 @@ def resolve_pending(session_id: str, message: str, *, pending: PendingStore, sto
 
 
 def propose(session_id: str, proposed: ProposedMemory | None, source_message: str, *,
-            pending: PendingStore, audit: AuditLog, now: datetime | None = None) -> str | None:
-    """Returns the question to append to the reply, or None when nothing is proposed."""
+            pending: PendingStore, audit: AuditLog, now: datetime | None = None,
+            grounded_in: str | None = None) -> str | None:
+    """Returns the question to append to the reply, or None when nothing is proposed.
+
+    grounded_in: when given, the fact may only use words that appear in this text (the user's
+    message). A fact that adds details the user never said is discarded and audited."""
     if proposed is None:
         return None
     fact = proposed.fact.strip()
@@ -95,6 +100,13 @@ def propose(session_id: str, proposed: ProposedMemory | None, source_message: st
         audit.append(audit_record(proposal, "policy_rejected", written=False, user_message=source_message,
                                   reason=check.reason, now=now))
         return None
+    if grounded_in is not None:
+        invented = ungrounded_words(fact, grounded_in)
+        if invented:
+            audit.append(audit_record(
+                proposal, "policy_rejected", written=False, user_message=source_message,
+                reason=f"fact adds details the user did not state: {', '.join(invented[:5])}", now=now))
+            return None
     if not pending.set_if_empty(proposal):  # only ONE pending proposal at a time
         audit.append(audit_record(proposal, "policy_rejected", written=False, user_message=source_message,
                                   reason="another proposal is still pending", now=now))

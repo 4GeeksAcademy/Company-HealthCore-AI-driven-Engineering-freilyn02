@@ -356,6 +356,7 @@ def memory_finalize(state: AgentState) -> dict:
                 state["question"],
                 pending=memory_runtime.get_pending_store(),
                 audit=memory_runtime.get_audit_log(),
+                grounded_in=state["question"],
             )
         except Exception as exc:
             question = None
