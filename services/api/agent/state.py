@@ -6,6 +6,8 @@ class AgentState(TypedDict):
     """Minimal state: only what the next node needs, no chat history."""
 
     question: str
+    # --- Part 3: harness (SEC-114) ---
+    guard_decision: dict | None  # input guard verdict: action / guardrail / failure_type
     # --- Part 2: routing + external tools ---
     route: str | None  # "rag" | "tool" | "both" (set by route_intent)
     route_decision: dict | None  # full structured RouteDecision, for traces

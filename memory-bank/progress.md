@@ -10,3 +10,6 @@
 ## Next steps
 1. Open PR from `milestone-4` into `main` with screenshots of `uis/website` and `uis/backoffice`, and a link to `AGENTS.md`
 2. Submit PR link on campus
+## Milestone 8 part 2 (SEC-114): agent harness and guardrails
+- Added input/output guardrails, untrusted-content isolation, observability and deterministic tests to the existing LangGraph agent.
+- PR: feature/agent-guardrails into feature/mcp-oauth-tools.
