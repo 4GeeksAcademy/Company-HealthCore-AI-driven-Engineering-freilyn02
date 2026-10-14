@@ -5,17 +5,22 @@
 
 Nothing is written to memory unless resolve_pending() sees an explicit, classified approval
 (or an edit that passes the memory policy again).
+
+HealthCore rule: when a user asks the agent to remember patient or personal health information,
+the request is REFUSED OUT LOUD (PHI_NOTICE explains why) and audited. It is never ignored
+silently, and the message never reaches the model.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
 from . import confirm
 from .audit import AuditLog
 from .grounding import ungrounded_words
-from .policy import validate_fact
+from .policy import inspect, validate_fact
 from .proposal import MemoryProposal, PendingStore, audit_record, get_active_or_expire
 from .store import MemoryEntry, MemoryStore
 from .turn import ProposedMemory
@@ -27,6 +32,19 @@ PROPOSAL_QUESTION = (
 SAVED_NOTICE = 'Saved. I will remember: "{fact}"'
 REJECTED_NOTICE = "Okay, I won't remember that."
 NOT_SAVED_NOTICE = "I couldn't save that to memory because it doesn't meet the memory policy."
+PHI_NOTICE = (
+    "I can't remember that. It appears to contain patient or personal health information, and "
+    "HealthCore's compliance rules (HIPAA in the US and UK GDPR in the UK) do not allow that in "
+    "the agent's memory. Nothing was saved. I can remember operational facts that don't identify "
+    "anyone, such as a change in a clinic's procedure or a recurring incident pattern. If you "
+    "have another question, please ask it again without the patient details."
+)
+_REMEMBER_INTENT = re.compile(
+    r"\b(?:remember|memori[sz]e|note\s+(?:that|this|it)\b|note\s+down|write\s+(?:that|this|it)\s+down|"
+    r"make\s+a\s+note|keep\s+(?:that|this|it)\s+in\s+mind|keep\s+track|don'?t\s+forget|do\s+not\s+forget|"
+    r"(?:save|store|log|record|add)\s+(?:that|this|it)\b|add\s+(?:that|this|it)\s+to\s+(?:your\s+)?(?:memory|notes))",
+    re.IGNORECASE,
+)
 _MAX_AUDITED_FACT = 600
 
 
@@ -34,7 +52,7 @@ _MAX_AUDITED_FACT = 600
 class ResolveResult:
     question: str  # what the rest of the agent must still answer ("" = nothing left)
     notice: str | None = None  # memory message to show the user
-    decision: str | None = None  # approve | edit | reject | unclear | policy_rejected | None
+    decision: str | None = None  # approve | edit | reject | unclear | policy_rejected | phi_refused | None
 
 
 def _squash(text: str) -> str:
@@ -48,8 +66,50 @@ def _remaining(message: str, candidate: str | None) -> str:
     return candidate.strip() if _squash(candidate) in _squash(message) else message
 
 
+def wants_to_remember(message: str) -> bool:
+    """True when the user asks the agent to remember / note down / save something."""
+    return bool(_REMEMBER_INTENT.search(message or ""))
+
+
+def is_phi(text: str) -> bool:
+    """True when the text contains patient or personal health information (HIPAA / UK GDPR)."""
+    return inspect(text or "").phi
+
+
+def refuse_phi_request(session_id: str, message: str, *, audit: AuditLog,
+                       now: datetime | None = None) -> str | None:
+    """If the user asks to remember something that contains patient information, refuse it
+    explicitly. Returns the explanation for the user, or None when the message is fine.
+    The audit record keeps the reason and the category, never the patient data itself."""
+    if not wants_to_remember(message):
+        return None
+    inspection = inspect(message)
+    if not (inspection.violation and inspection.phi):
+        return None
+    proposal = MemoryProposal.new(session_id, "(request to remember refused: no proposal created)", [],
+                                  "", message, now=now)
+    audit.append(audit_record(
+        proposal, "policy_rejected", written=False, user_message=message,
+        reason=f"request to remember patient or personal information ({inspection.violation})", now=now))
+    return PHI_NOTICE
+
+
 def resolve_pending(session_id: str, message: str, *, pending: PendingStore, store: MemoryStore,
                     audit: AuditLog, now: datetime | None = None) -> ResolveResult:
+    """Resolve the pending proposal (if any); then refuse, out loud, any request to remember
+    patient information. A refused message is NOT passed on: the model never sees it."""
+    result = _resolve_pending(session_id, message, pending=pending, store=store, audit=audit, now=now)
+    if not result.question.strip():
+        return result
+    refusal = refuse_phi_request(session_id, result.question, audit=audit, now=now)
+    if refusal is None:
+        return result
+    notice = f"{result.notice}\n\n{refusal}" if result.notice else refusal
+    return ResolveResult(question="", notice=notice, decision="phi_refused")
+
+
+def _resolve_pending(session_id: str, message: str, *, pending: PendingStore, store: MemoryStore,
+                     audit: AuditLog, now: datetime | None = None) -> ResolveResult:
     proposal = get_active_or_expire(pending, audit, session_id, now=now)
     if proposal is None:
         return ResolveResult(question=message)  # nothing pending: normal turn

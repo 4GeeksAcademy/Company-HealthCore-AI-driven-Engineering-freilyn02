@@ -307,10 +307,14 @@ def memory_resolve(state: AgentState) -> dict:
         return {"trace_steps": [_step(state, "memory_resolve", f"skipped: memory unavailable ({type(exc).__name__})")]}
     if result.decision is None:  # nothing was pending: normal turn
         return {}
+    if result.decision == "phi_refused":  # HealthCore: patient information is refused out loud
+        summary = "refused: request to remember patient information (audited, redacted, not sent to the model)"
+    else:
+        summary = f"pending proposal resolved: {result.decision}"
     return {
         "question": result.question,  # what is still left to answer ("" = nothing)
         "memory_notice": result.notice,
-        "trace_steps": [_step(state, "memory_resolve", f"pending proposal resolved: {result.decision}")],
+        "trace_steps": [_step(state, "memory_resolve", summary)],
     }
 
 
@@ -366,6 +370,9 @@ def memory_finalize(state: AgentState) -> dict:
             steps.append(_step(state, "memory_propose", "proposal appended to the reply (nothing written yet)"))
         elif not steps:
             steps.append(_step(state, "memory_propose", "proposal discarded by the memory policy"))
+            if memory_flow.is_phi(raw.get("fact", "")):
+                # HealthCore: patient information is refused OUT LOUD, never ignored silently.
+                parts.append(memory_flow.PHI_NOTICE)
 
     if not notice and not raw:
         return {}

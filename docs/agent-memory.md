@@ -14,12 +14,15 @@ user message
 memory_resolve   a proposal is pending? classify the message
                  approve / edit -> policy check -> write -> audit
                  reject / unclear -> discard -> audit
+                 then: "remember this" + patient information? -> REFUSE out loud, audit,
+                 and stop (the message never reaches the model)
    |
    v
 input_guard -> memory_read -> route -> retrieve / tools -> answer (ONE structured model call)
    |
    v
-memory_finalize  appends the "remember this?" question, keeps ONE pending proposal, audits "proposed"
+memory_finalize  appends the "remember this?" question, keeps ONE pending proposal, audits "proposed";
+                 a model proposal that contains patient information is dropped and explained
    |
    v
 output_guard -> reply
@@ -44,11 +47,11 @@ output_guard -> reply
 | Store (Redis / in-memory) | `services/api/agent/memory/store.py` |
 | Pending proposal + audit records | `services/api/agent/memory/proposal.py` |
 | Append-only audit log | `services/api/agent/memory/audit.py` |
-| What may never be stored | `services/api/agent/memory/policy.py` |
+| What may never be stored (HIPAA / UK GDPR rules) | `services/api/agent/memory/policy.py` |
 | Code-level guards on proposals and replies | `services/api/agent/memory/grounding.py` |
 | Reply + `memory_proposal` in one structured call | `services/api/agent/memory/turn.py` |
 | Intent classifier (approve / reject / edit / unclear) | `services/api/agent/memory/confirm.py` |
-| Propose / resolve flow | `services/api/agent/memory/flow.py` |
+| Propose / resolve flow + explicit refusal of patient information | `services/api/agent/memory/flow.py` |
 | Cleanup policy | `services/api/agent/memory/consolidate.py`, `scripts/memory_consolidate.py` |
 | Graph wiring | `services/api/agent/state.py`, `graph.py`, `nodes.py`, `services/api/routers/agent.py` |
 
@@ -80,17 +83,50 @@ queue on DB `/0`.
 **What types of memory, and what was discarded?** Episodic facts only (see above). Vector and graph
 memory were left out because the data is small and has no relational structure.
 
-**What must never enter memory, whoever asks?**
+**What must never enter memory, whoever asks?** This comes straight from the HealthCore memory
+CONTEXT. It is a compliance requirement with no exceptions, so it is enforced in code (`policy.py`),
+not left to the model:
 
-- Patient-identifying data (names, dates of birth, record numbers, contact details). This comes from
-  the regulatory constraint in `CONTEXT.md`. It is blocked when a fact is proposed and when it is
-  edited, and it is redacted in the audit log.
+- **Any patient identifier:** name, medical record number, date of birth, diagnosis, insurance
+  number, NHS or National Insurance number, a patient's address or dates, or any combination that
+  could re-identify a person.
+- **Any clinical content:** clinical notes, lab or test results, medication, symptoms, anything from a
+  medical visit, even if the user mentions it while asking the agent to remember something else.
 - Credentials, API keys and tokens.
-- Live data (ticket status, stock levels): it changes and has its own tools.
+- Live data (ticket status, stock levels, this week's no-show rate): it changes and has its own tools.
 - Instructions to the agent disguised as facts ("from now on always answer in...").
-- Opinions and anything about a specific person.
+- Opinions.
 
-These checks are deterministic (`policy.py`), so a model mistake or a fake "approval" cannot get past them.
+A **staff member's name is allowed** when it is part of an operational presentation preference
+("the weekly report for Diane Foster needs vacancies by role"). That is not patient data.
+
+The patient-information check runs **at every stage**, not only at the first one:
+
+1. **Before the model sees the message:** if the user asks to remember something ("note that down",
+   "remember this") and the message contains patient information, the agent **refuses out loud**:
+   it explains that it cannot remember it and why (HIPAA and UK GDPR), says nothing was saved, and
+   suggests what it can remember instead. The message is not sent to the model. The audit log records
+   the refusal (`policy_rejected`) with the user message and the fact **redacted**.
+2. **When the model proposes a fact:** every proposal is validated *before* the user sees it. If it
+   contains patient information it is discarded, audited, and the user gets the same explanation.
+   The prompt also tells the model to leave patients out and propose a de-identified pattern or nothing.
+3. **When the user edits a proposal:** the edited fact is validated again before it is stored.
+4. **When the memory is consolidated:** every stored entry is re-checked and deleted if it fails.
+5. **The proposal keywords** are validated too, because they are stored and searched.
+
+**How the validation covers both HIPAA (US) and UK GDPR (UK).** HealthCore operates under both at
+the same time, so each rule in `policy.py` is mapped to both frameworks in `FRAMEWORK_COVERAGE`
+(a test fails if a rule has no mapping):
+
+| Rule | HIPAA (US) | UK GDPR (UK) |
+| --- | --- | --- |
+| `patient_name`, `patient_address`, `patient_date` | Identifiers: names, geographic data smaller than a state, dates related to an individual | Personal data of an identifiable person |
+| `email`, `phone`, `ssn`, `long_number`, `medical_record`, `insurance_id`, `date_of_birth` | Identifiers: contact data, SSN, record, health plan and account numbers, dates | Personal data and identification numbers |
+| `nhs_number`, `national_insurance` | "Any other unique identifier" | Identifiers linked to a person (NHS number, National Insurance number) |
+| `clinical_content`, `patient_condition` | Protected health information | Special category data: health (Art. 9) |
+
+The rule is the stricter of the two: if either framework would treat it as protected, it is blocked.
+The same checks apply to US and UK clinics, so a UK-only identifier is blocked everywhere.
 
 **How does the agent decide what to forget, and what happens to a pending proposal nobody answers?**
 
@@ -98,6 +134,9 @@ These checks are deterministic (`policy.py`), so a model mistake or a fake "appr
   discard is audited as `timeout`. If the user never comes back, the audit keeps the `proposed`
   record without an outcome, and Redis deletes the pending key after 24 hours.
 - Approved memories are cleaned by `scripts/memory_consolidate.py` (it has a `--dry-run` mode):
+  0. **Re-check the policy** on every stored entry and **delete** any that contains patient
+     information or other forbidden data (and audit the deletion without logging the text).
+     Consolidation never rewrites or summarizes a fact, so it can never write new patient data.
   1. **Expire** entries not used for 90 days (stale facts are worse than none).
   2. **Supersede**: an older entry with the same keywords, or the same text, loses to the newer one.
   3. **Cap** at 200 entries, evicting the least used first. Redis runs with `noeviction`, so the cap is ours.
@@ -124,22 +163,31 @@ The only extra call is the small intent classifier, and it only runs when a prop
 
 ## 4. What is and is not memorable
 
+What is worth remembering (from the HealthCore memory CONTEXT): recurring operational corrections per
+clinic (schedule changes, local front-desk protocols, administrative exceptions by country), known
+incident patterns **with no patient data**, and how a staff member wants operational (not clinical)
+information presented.
+
 Memorable (a `memory_proposal` is created):
 
-| Example | Status |
+| Example | Kind |
 | --- | --- |
-| The user corrects the late-cancellation and no-show fee to 75 USD (the knowledge base says 50 USD). | Verified with the real model (section 6). |
-| The user corrects a stated escalation window in the referral process. | Design example. |
-| The user confirms a stable, reusable company-level rule that is not in the knowledge base. | Design example. |
+| "At the Manchester clinic, internal referrals now go through the coordinator before the specialist; that changed last quarter." | Clinic operational correction (UK) |
+| "That high no-show alert at the Austin clinic was because of a road closure that week, not a real problem with the reminder programme." | Incident pattern, no patient data |
+| "The weekly report for Diane Foster needs vacancies broken down by role, not just by clinic; she asked for that two weeks ago." | Staff presentation preference |
+| The user corrects the late-cancellation and no-show fee to 75 USD (the knowledge base says 50 USD). | Administrative exception by country. Used in the real-model evidence (section 6). |
 
 Not memorable (`memory_proposal` stays `null`):
 
-| Example | Status |
-| --- | --- |
-| The user "corrects" something the knowledge base already says (cancelling 24 hours ahead is free). The agent answers that this is correct and proposes nothing. | Observed with the real model in an earlier run (that transcript was not kept). |
-| Greetings, thanks and small talk. | Design example. |
-| Live-data questions such as "what is the status of ticket 482?" or "how many gloves are in stock?". | Design example. A proposal only comes from the knowledge route. |
-| A message that contains patient data or credentials. | Verified by tests (the policy rejects it). |
+| Example | Why | Behavior |
+| --- | --- | --- |
+| "What's this week's no-show rate?" | One-off query; the data lives in the dashboard. | No proposal. |
+| "Patient Johnson cancelled tomorrow's appointment, note that down." | An attempt to store patient information. | **Refused out loud** with an explanation, audited and redacted, never sent to the model. |
+| "Thanks, that settles my report." | The conversation is closing; nothing new. | No proposal. |
+| The user "corrects" something the knowledge base already says (cancelling 24 hours ahead is free). | Nothing new. | The agent answers that this is correct. Observed with the real model in an earlier run (that transcript was not kept). |
+| Live-data questions such as "what is the status of ticket 482?". | Live data has its own tools. | No proposal. |
+
+These examples are also tests (`tests/pipelines/test_memory_phi.py`).
 
 ## 5. Audit log
 
@@ -151,23 +199,29 @@ decision: proposed | approve | edit | reject | unclear | timeout | policy_reject
 ~~~
 
 - It is append-only (the interface has no delete, clear or update method).
-- Patient data and credentials are redacted before they are logged.
+- Patient data and credentials are redacted before they are logged. A refused request to remember a
+  patient is recorded with its reason (for example `forbidden:patient_name`) and a redacted message.
 - It is capped at 20,000 records. In production it would be rotated to durable storage first.
 
 ## 6. Evidence
 
-`scripts/memory_evidence.py` runs the two required cycles with the real model, real Qdrant and real
-Redis, and prints the transcript and the audit trail. The transcript is attached to the PR.
+`scripts/memory_evidence.py` runs the two required cycles, plus the patient-information refusal, with the
+real model, real Qdrant and real Redis, and prints the transcript and the audit trail. The transcript is
+attached to the PR.
 
 - **Rejected cycle:** the agent proposes the 75 USD correction, the user says no, nothing is stored,
   the audit shows `proposed` then `reject`, and a later conversation still answers with the official 50 USD.
 - **Approved cycle:** the agent proposes the same correction, the user says yes, exactly one entry is
   stored, the audit shows `proposed` then `approve`, and in a new conversation the agent uses the
   memory and presents it as a user-approved correction that is not yet verified.
+- **Patient-information cycle (HealthCore CONTEXT):** the user asks the agent to note that "Patient
+  Johnson cancelled tomorrow's appointment". The agent refuses out loud and explains why, nothing is
+  stored, and the audit shows a single `policy_rejected` record with the message redacted.
 
 The behavior is also covered by deterministic tests with a fake model and no external services:
-`tests/pipelines/test_memory_store.py`, `test_memory_flow.py`, `test_memory_agent.py` and
-`test_memory_guards.py`.
+`tests/pipelines/test_memory_store.py`, `test_memory_flow.py`, `test_memory_agent.py`,
+`test_memory_guards.py` and `test_memory_phi.py` (patient information, HIPAA / UK GDPR coverage, the
+explicit refusal, and the consolidation re-check).
 
 **What the real model got wrong, and the fix.** Running the real evidence showed problems the fake
 model could not:
@@ -192,4 +246,11 @@ line of defense.
   fact that is phrased with different words (the safe direction). The reply filter is a list of
   patterns, so a new phrasing of a false promise could get through until it is added.
 - **`session_id` is chosen by the client.** It identifies a conversation, not a user.
+- **The patient-information checks are lexical.** They are regular expressions: they catch names written as
+  "Patient Johnson" (capitalized), identifiers with a recognizable shape, and clinical vocabulary. They
+  can miss a lowercase name ("patient johnson"), a misspelled identifier or an indirect description, and
+  they can reject a harmless sentence that uses a clinical word (the safe direction). They are one
+  layer of defense, not a replacement for the compliance review that HealthCore requires.
+- **Biometrics, photos and free-text descriptions** (HIPAA identifiers that are not text patterns) are out
+  of scope for a text-only agent.
 - **No automatic scheduling** of the cleanup yet: run `scripts/memory_consolidate.py` by hand or schedule it.

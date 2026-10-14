@@ -1,8 +1,9 @@
 """MEM-092: consolidation / cleanup of the agent memory.
 
 Run it by hand or schedule it (cron, Celery beat...). The policy lives in
-services/api/agent/memory/consolidate.py: expire unused entries, supersede older
-corrections, cap the total size.
+services/api/agent/memory/consolidate.py: re-check every stored entry against the memory
+policy (patient information is deleted), expire unused entries, supersede older corrections,
+cap the total size.
 
 Usage (from the repo root):
   python scripts/memory_consolidate.py --dry-run   # show what would be removed, change nothing
@@ -26,6 +27,8 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(ROOT / ".env")
 
 from agent.memory import runtime  # noqa: E402
+from agent.memory.audit import AuditRecord  # noqa: E402
+from agent.memory.clock import to_iso, utc_now  # noqa: E402
 from agent.memory.consolidate import ENTRY_TTL_DAYS, MAX_ENTRIES, consolidate  # noqa: E402
 from agent.memory.store import InMemoryMemoryStore  # noqa: E402
 
@@ -38,7 +41,8 @@ def main() -> int:
 
     store = runtime.get_store()
     entries = store.list()
-    print(f"Policy: expire after {ENTRY_TTL_DAYS} days unused, keep at most {MAX_ENTRIES} entries.")
+    print("Policy: re-check every entry for patient information and other forbidden data (delete failures),")
+    print(f"        expire after {ENTRY_TTL_DAYS} days unused, supersede older corrections, keep at most {MAX_ENTRIES} entries.")
     print(f"Entries before: {len(entries)}")
 
     target = store
@@ -48,11 +52,22 @@ def main() -> int:
             target.write(entry)
 
     report = consolidate(target)
+    print(f"Removed by the memory policy (patient information, credentials...): {len(report.policy_removed)} {report.policy_removed}")
     print(f"Expired (unused): {len(report.expired)} {report.expired}")
     print(f"Superseded (newer correction or duplicate): {len(report.superseded)} {report.superseded}")
     print(f"Evicted (size cap): {len(report.evicted)} {report.evicted}")
     print(f"Entries kept: {report.kept}")
     print("DRY RUN: nothing was deleted." if args.dry_run else "Cleanup applied.")
+
+    if report.policy_removed and not args.dry_run:
+        audit = runtime.get_audit_log()
+        for entry_id, reason in report.policy_removed:  # the fact text is NOT logged: it was forbidden data
+            audit.append(AuditRecord(
+                timestamp=to_iso(utc_now()), proposal_id=entry_id, session_id="consolidation",
+                proposed_fact="[removed by the memory policy: text not logged]", user_message=None,
+                decision="policy_rejected", written=False,
+                reason=f"consolidation deleted a stored entry that no longer passes the policy ({reason})",
+            ))
 
     if args.summary:
         records = runtime.get_audit_log().list()

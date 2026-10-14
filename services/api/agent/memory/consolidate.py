@@ -1,6 +1,11 @@
 """Consolidation / cleanup, so the memory can never grow without limit.
 
 Policy (and why):
+  0. RE-CHECK every entry against the memory policy (patient information, credentials, poisoning)
+     and DELETE any entry that fails. HealthCore requires this: validating only when a
+     proposal is made is not enough, because the rules can get stricter and entries can be
+     edited. Consolidation never rewrites or summarizes a fact, so nothing new is ever
+     written; it only keeps or deletes entries that passed this check.
   1. EXPIRE entries not used for ENTRY_TTL_DAYS: stale facts are worse than no facts.
   2. SUPERSEDE: entries with the same keys (a newer correction) or the same normalized
      text keep only the newest one, so old values never fight the corrected one.
@@ -15,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .clock import from_iso, utc_now
+from .policy import validate_fact
 from .store import MemoryEntry, MemoryStore
 
 ENTRY_TTL_DAYS = 90
@@ -23,6 +29,7 @@ MAX_ENTRIES = 200
 
 @dataclass
 class ConsolidationReport:
+    policy_removed: list[tuple[str, str]] = field(default_factory=list)  # (entry id, policy reason)
     expired: list[str] = field(default_factory=list)
     superseded: list[str] = field(default_factory=list)
     evicted: list[str] = field(default_factory=list)
@@ -44,7 +51,10 @@ def consolidate(store: MemoryStore, now: datetime | None = None, ttl_days: int =
 
     live: list[MemoryEntry] = []
     for entry in store.list():
-        if now - from_iso(entry.last_used_at) > timedelta(days=ttl_days):
+        check = validate_fact(entry.fact, entry.keys)  # step 0: the policy is re-applied to what is stored
+        if not check.allowed:
+            report.policy_removed.append((entry.id, check.reason or "policy"))
+        elif now - from_iso(entry.last_used_at) > timedelta(days=ttl_days):
             report.expired.append(entry.id)
         else:
             live.append(entry)
@@ -69,7 +79,8 @@ def consolidate(store: MemoryStore, now: datetime | None = None, ttl_days: int =
         report.evicted = [e.id for e in survivors[:cut]]
         survivors = survivors[cut:]
 
-    for entry_id in report.expired + report.superseded + report.evicted:
+    removed = [entry_id for entry_id, _ in report.policy_removed]
+    for entry_id in removed + report.expired + report.superseded + report.evicted:
         store.delete(entry_id)
     report.kept = len(survivors)
     return report

@@ -4,6 +4,8 @@ Runs the REAL agent (real model, real Qdrant RAG, real Redis memory on DB /1) th
   Cycle B - a proposal that the user REJECTS: memory stays unchanged.
   Cycle A - a proposal that the user APPROVES: the fact is stored and used in a later,
             separate conversation.
+  Cycle C - a request to remember PATIENT information (HealthCore CONTEXT): refused out loud,
+            audited with the patient data redacted, nothing stored.
 and writes an English transcript + audit trail that can be pasted into the PR.
 
 Needs: `docker compose up -d redis qdrant`, a valid .env (LLM_API_KEY, GENERATION_MODEL).
@@ -11,6 +13,7 @@ Needs: `docker compose up -d redis qdrant`, a valid .env (LLM_API_KEY, GENERATIO
 Usage (from the repo root):
   python scripts/memory_evidence.py
   python scripts/memory_evidence.py --correction "..." --followup "..."
+  python scripts/memory_evidence.py --phi-only      # only the patient-information refusal
   python scripts/memory_evidence.py --no-reset      # keep existing memory entries
 """
 
@@ -32,6 +35,8 @@ load_dotenv(ROOT / ".env")
 
 from agent.graph import run_agent  # noqa: E402
 from agent.memory import runtime  # noqa: E402
+from agent.memory.audit import REDACTED  # noqa: E402
+from agent.memory.flow import PHI_NOTICE  # noqa: E402
 from agent.memory.store import KEY_PREFIX, get_redis_client, memory_redis_url  # noqa: E402
 
 DEFAULT_CORRECTION = (
@@ -39,6 +44,7 @@ DEFAULT_CORRECTION = (
     "at least 24 hours before the appointment."
 )
 DEFAULT_FOLLOWUP = "Is the no-show fee waived when a patient cancels at least 24 hours in advance?"
+DEFAULT_PHI_REQUEST = "Patient Johnson cancelled tomorrow's appointment, note that down."
 
 
 class Report:
@@ -149,12 +155,39 @@ def cycle_approved(report: Report, args) -> bool:
     return True
 
 
+def cycle_phi_refused(report: Report, args) -> bool:
+    report.add("## Cycle C - a request to remember patient information is refused")
+    report.add()
+    pending = runtime.get_pending_store()
+    before = memory_facts()
+    sid = new_session()
+    state = run_turn(report, args.phi_request, sid)
+    answer = state.get("answer") or ""
+    report.check("The agent refused out loud and explained why (HIPAA / UK GDPR)", PHI_NOTICE in answer)
+    report.check("Nothing was written to memory", memory_facts() == before)
+    report.check("No proposal is pending", pending.get(sid) is None)
+    records = session_audit(sid)
+    report.add("Audit records for this conversation:")
+    for record in records:
+        report.add(
+            f"- `{record.timestamp}` -> **{record.decision}** (written={record.written}); "
+            f"reason: {record.reason}; user message: \"{record.user_message}\""
+        )
+    report.add()
+    report.check("Audit log has the refusal", [r.decision for r in records] == ["policy_rejected"])
+    report.check("The patient data is redacted in the audit log", all(r.user_message == REDACTED for r in records))
+    report.add()
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Real evidence for the memory cycles (MEM-092).")
     parser.add_argument("--correction", default=DEFAULT_CORRECTION)
     parser.add_argument("--followup", default=DEFAULT_FOLLOWUP)
     parser.add_argument("--approve", default="Yes, please remember that.")
     parser.add_argument("--reject", default="No, please don't save that.")
+    parser.add_argument("--phi-request", default=DEFAULT_PHI_REQUEST)
+    parser.add_argument("--phi-only", action="store_true", help="run only the patient-information refusal")
     parser.add_argument("--no-reset", action="store_true", help="keep existing agent memory in Redis DB /1")
     parser.add_argument("--out", default=str(ROOT / "data" / "eval" / "traces" / "memory_evidence.md"))
     args = parser.parse_args()
@@ -177,7 +210,11 @@ def main() -> int:
         report.add(f"Reset: removed {removed} `{KEY_PREFIX}:*` keys from this database before starting.")
     report.add()
 
-    complete = cycle_rejected(report, args) and cycle_approved(report, args)
+    if args.phi_only:
+        complete = cycle_phi_refused(report, args)
+    else:
+        complete = cycle_rejected(report, args) and cycle_approved(report, args)
+        complete = cycle_phi_refused(report, args) and complete
 
     passed = sum(1 for _, ok in report.checks if ok)
     report.add("## Result")
