@@ -6,6 +6,11 @@ class AgentState(TypedDict):
     """Minimal state: only what the next node needs, no chat history."""
 
     question: str
+    # --- MEM-092: memory (all optional; nothing happens unless session_id is set) ---
+    session_id: str | None  # conversation id sent by the client; None = memory is off
+    memories: list[dict] | None  # approved memories read for this question
+    memory_proposal: dict | None  # self-evaluation output (fact / keys / reason)
+    memory_notice: str | None  # "Saved..." / "Okay, I won't remember that." for this turn
     # --- Part 3: harness (SEC-114) ---
     guard_decision: dict | None  # input guard verdict: action / guardrail / failure_type
     # --- Part 2: routing + external tools ---
