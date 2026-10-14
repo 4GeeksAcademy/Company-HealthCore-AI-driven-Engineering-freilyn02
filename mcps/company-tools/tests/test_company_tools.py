@@ -221,3 +221,4 @@ def test_one_structured_log_per_invocation(mcp_server, token, caplog):
     assert entries[0]["result"] == "success"
     assert entries[1]["result"] == "error:INVENTORY_WRITE_FORBIDDEN"
     assert "TOP-SECRET" not in json.dumps(entries)  # titles/descriptions never reach the logs
+    

@@ -25,6 +25,7 @@ def save_trace(run_id: str, state: dict) -> Path:
     payload = {
         "run_id": run_id,
         "question": state.get("question"),
+        "guard_decision": state.get("guard_decision"),  # input guard verdict (SEC-114)
         "route": state.get("route"),
         "route_rationale": (state.get("route_decision") or {}).get("rationale"),
         "sources_used": sources_used(steps),  # which source(s) ran, in order

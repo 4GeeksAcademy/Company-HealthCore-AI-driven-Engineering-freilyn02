@@ -1,6 +1,12 @@
 from data.pipelines.rag import generate_answer, retrieve  # reuse existing RAG code
 
 from . import tools as agent_tools
+from .harness import observability
+from .harness.casual import casual_reply
+from .harness.external_content import wrap_chunks
+from .harness.input_guards import check_input
+from .harness.output_guards import guard_output
+from .prompts.system import CASUAL_FALLBACK, REDIRECT_SUFFIX
 from .router import RouteDecision, classify_question
 from .state import AgentState
 
@@ -64,7 +70,10 @@ def no_context_node(state: AgentState) -> dict:
 
 def query_node(state: AgentState) -> dict:
     try:
-        answer = generate_answer(state["question"], state["retrieved_context"])
+        # Retrieved text is DATA: neutralize instruction-like spans and wrap it in
+        # <untrusted_source> tags (it travels in the user role, never the system role).
+        safe_context = wrap_chunks(state["retrieved_context"])
+        answer = generate_answer(state["question"], safe_context)
     except Exception as exc:
         return {
             "error": "generation_failed",
@@ -196,4 +205,62 @@ def synthesize_answer(state: AgentState) -> dict:
         "trace_steps": [
             _step(state, "synthesize_answer", f"merged {len(parts)} source(s)")
         ],
+    }
+
+
+# =============================================================================
+# SEC-114: harness nodes (input guard, casual redirect, output guard)
+# =============================================================================
+def input_guard(state: AgentState) -> dict:
+    """First line of defense: runs before routing, retrieval, tools or any model call."""
+    decision = check_input(state["question"])
+    update: dict = {"guard_decision": decision.as_dict()}
+    if decision.action == "allow":
+        update["trace_steps"] = [_step(state, "input_guard", "allowed")]
+        return update
+
+    observability.record_event(
+        decision.guardrail or "input_guard",
+        decision.failure_type or "content",
+        "block" if decision.action == "block" else "redirect",
+        state["question"],
+        redirect=True,  # both the refusal and the casual answer steer back to HealthCore
+        sensitive=decision.sensitive,
+    )
+    update["trace_steps"] = [
+        _step(state, "input_guard", f"{decision.action}: {decision.guardrail} ({decision.failure_type})")
+    ]
+    if decision.action == "block":
+        update["answer"] = decision.message
+    return update
+
+
+def casual_node(state: AgentState) -> dict:
+    """Brief answer to a casual question, ALWAYS closed with the redirect to HealthCore."""
+    reply = casual_reply(state["question"]) or CASUAL_FALLBACK
+    return {
+        "answer": f"{reply}\n\n{REDIRECT_SUFFIX}",
+        "trace_steps": [_step(state, "casual_reply", "brief answer + redirect to HealthCore")],
+    }
+
+
+def output_guard(state: AgentState) -> dict:
+    """Last line of defense: validate whatever answer is about to leave the agent."""
+    if state.get("error"):  # failed runs return an HTTP error, not an answer
+        return {"trace_steps": [_step(state, "output_guard", "skipped (run failed)")]}
+    verdict = guard_output(state.get("answer"))
+    for finding in verdict.findings:
+        observability.record_event(
+            finding.guardrail,
+            finding.failure_type,
+            finding.action,
+            state.get("answer") if isinstance(state.get("answer"), str) else None,
+            sensitive=True,  # never copy a flagged answer into the logs
+        )
+    if not verdict.changed:
+        return {"trace_steps": [_step(state, "output_guard", "ok")]}
+    names = ", ".join(f.guardrail for f in verdict.findings)
+    return {
+        "answer": verdict.answer,
+        "trace_steps": [_step(state, "output_guard", f"sanitized: {names}")],
     }

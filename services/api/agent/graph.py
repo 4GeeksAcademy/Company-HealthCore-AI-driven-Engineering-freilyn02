@@ -4,7 +4,10 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from .nodes import (
+    casual_node,
     handle_tool_failure,
+    input_guard,
+    output_guard,
     lookup_inventory,
     lookup_ticket,
     no_context_node,
@@ -29,7 +32,17 @@ def _pending_tools(state: AgentState) -> list[str]:
 
 
 def after_receive(state: AgentState) -> str:
-    return "end" if state.get("error") else "route_intent"
+    return "end" if state.get("error") else "input_guard"
+
+
+def after_input_guard(state: AgentState) -> str:
+    """Conditional edge driven by the input guard verdict (SEC-114)."""
+    action = (state.get("guard_decision") or {}).get("action", "allow")
+    if action == "block":
+        return "end"  # fixed refusal already in state["answer"]; nothing else runs
+    if action == "redirect_casual":
+        return "casual"
+    return "route_intent"
 
 
 def after_route(state: AgentState) -> str:
@@ -70,6 +83,9 @@ def after_rag_answer(state: AgentState) -> str:
 def build_agent_graph():
     builder = StateGraph(AgentState)
     builder.add_node("receive_question", receive_question)
+    builder.add_node("input_guard", input_guard)
+    builder.add_node("casual", casual_node)
+    builder.add_node("output_guard", output_guard)
     builder.add_node("route_intent", route_intent)
     builder.add_node("lookup_ticket", lookup_ticket)
     builder.add_node("lookup_inventory", lookup_inventory)
@@ -80,9 +96,16 @@ def build_agent_graph():
     builder.add_node("synthesize_answer", synthesize_answer)
 
     builder.set_entry_point("receive_question")
+    # Every path that used to finish at END now passes through the output guard first.
     builder.add_conditional_edges(
-        "receive_question", after_receive, {"route_intent": "route_intent", "end": END}
+        "receive_question", after_receive, {"input_guard": "input_guard", "end": "output_guard"}
     )
+    builder.add_conditional_edges(
+        "input_guard",
+        after_input_guard,
+        {"route_intent": "route_intent", "casual": "casual", "end": "output_guard"},
+    )
+    builder.add_edge("casual", "output_guard")
     builder.add_conditional_edges(
         "route_intent",
         after_route,
@@ -102,20 +125,21 @@ def build_agent_graph():
     builder.add_conditional_edges("lookup_ticket", after_tool, tool_targets)
     builder.add_conditional_edges("lookup_inventory", after_tool, tool_targets)
     builder.add_conditional_edges(
-        "handle_tool_failure", after_failure, {"retrieve": "retrieve", "end": END}
+        "handle_tool_failure", after_failure, {"retrieve": "retrieve", "end": "output_guard"}
     )
     builder.add_conditional_edges(
         "retrieve",
         after_retrieve,
-        {"query": "query", "no_context": "no_context", "end": END},
+        {"query": "query", "no_context": "no_context", "end": "output_guard"},
     )
     builder.add_conditional_edges(
-        "no_context", after_rag_answer, {"synthesize_answer": "synthesize_answer", "end": END}
+        "no_context", after_rag_answer, {"synthesize_answer": "synthesize_answer", "end": "output_guard"}
     )
     builder.add_conditional_edges(
-        "query", after_rag_answer, {"synthesize_answer": "synthesize_answer", "end": END}
+        "query", after_rag_answer, {"synthesize_answer": "synthesize_answer", "end": "output_guard"}
     )
-    builder.add_edge("synthesize_answer", END)
+    builder.add_edge("synthesize_answer", "output_guard")
+    builder.add_edge("output_guard", END)
 
     # compile() validates the structure: a broken graph fails at import time
     return builder.compile(checkpointer=MemorySaver())
@@ -130,6 +154,7 @@ def run_agent(question: str) -> tuple[str, dict]:
     final_state = agent_graph.invoke(
         {
             "question": question,
+            "guard_decision": None,
             "route": None,
             "route_decision": None,
             "tool_results": [],

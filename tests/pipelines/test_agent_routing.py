@@ -175,7 +175,7 @@ def test_both_route_runs_tool_then_rag_and_merges(monkeypatch, rag_calls):
 
     assert trace["route"] == "both"
     assert trace["sources_used"] == ["ticket_tool", "rag"]  # tool first, then RAG
-    assert nodes_run(run_id)[-1] == "synthesize_answer"
+    assert nodes_run(run_id)[-2:] == ["synthesize_answer", "output_guard"]  # output guard runs last
     assert "Ticket 482" in state["answer"] and "Per policy" in state["answer"]
 
 
