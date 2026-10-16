@@ -37,6 +37,9 @@ export default function RootLayout({
               <Link href="/knowledge" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
                 Knowledge Assistant
               </Link>
+              <Link href="/rfp" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
+                RFP Intake
+              </Link>
               <Link href="/inventory/products" className="font-semibold text-[#5f5a54] hover:text-[#ff6a3d]">
                 Medical Supplies
               </Link>
