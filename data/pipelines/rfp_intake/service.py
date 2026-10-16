@@ -2,6 +2,9 @@
 
 The router creates the ticket and enqueues `run_ticket`; the pipeline runs in
 the background and this module is the only place that changes ticket status.
+
+HIPAA / UK GDPR: everything that reaches the database passes through
+`scrub_obj` first, as a last line of defense on top of the PHI guard in the graph.
 """
 from datetime import datetime, timezone
 from typing import Any
@@ -9,14 +12,17 @@ from typing import Any
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, delete, select
 
+from .config import currency_for
 from .graph import run_intake
 from .models import (
+    ROUTING_COMPLIANCE_REVIEW,
     ROUTING_READY_FOR_PART2,
-    STATUS_ANALYSIS_COMPLETE,
     STATUS_DISCARDED,
+    STATUS_INTAKE_COMPLETE,
     RfpDepartmentSection,
     RfpTicket,
 )
+from .phi import redact_text, scrub_obj
 
 
 def _now() -> datetime:
@@ -34,9 +40,9 @@ def create_ticket(session: Session, *, filename: str, pdf_path: str, user_id: in
 def run_ticket(ticket_id: int, engine: Engine) -> None:
     """Runs the whole pipeline for one ticket. Never raises: failures are stored.
 
-    Design decision: Part 1 only allows analizando / analisis_completo /
-    descartado. If the pipeline itself crashes we mark the ticket `descartado`
-    and fill `error_message`, so it never stays stuck in `analizando` forever.
+    Design decision: Part 1 only allows analyzing / intake_complete / discarded.
+    If the pipeline itself crashes we mark the ticket `discarded` and fill
+    `error_message`, so it never stays stuck in `analyzing` forever.
     `scripts/rfp_intake_smoke.py --reprocess <id>` can run it again.
     """
     with Session(engine) as session:
@@ -47,28 +53,48 @@ def run_ticket(ticket_id: int, engine: Engine) -> None:
             state = run_intake(ticket.raw_pdf_path)
         except Exception as exc:
             ticket.status = STATUS_DISCARDED
-            ticket.error_message = f"{type(exc).__name__}: {exc}"[:1000]
+            ticket.error_message = redact_text(f"{type(exc).__name__}: {exc}")[:1000]
             ticket.updated_at = _now()
             session.add(ticket)
             session.commit()
             return
 
+        phi = state.get("phi") or {"contains_phi": False, "findings": {}}
         classification = state["classification"]
-        ticket.markdown_path = state.get("markdown_path")
-        ticket.rfp_metadata = state.get("metadata")
+        rfp_fields = scrub_obj(state.get("rfp_fields") or {})
+
+        ticket.markdown_path = state.get("markdown_path")  # redacted markdown
         ticket.readability = state.get("readability")
+        ticket.contains_phi = bool(phi["contains_phi"])
+        ticket.phi_findings = phi["findings"]  # counts by type, never values
         ticket.is_rfp = classification["is_rfp"]
         ticket.classifier_confidence = classification["confidence"]
-        ticket.classifier_reason = classification["reason"]
+        ticket.classifier_reason = redact_text(classification["reason"])
         ticket.detected_departments = classification["detected_departments"]
         ticket.classified_at = _now()
 
         if not classification["is_rfp"]:
             ticket.status = STATUS_DISCARDED  # explicit, never a silent failure
+            ticket.rfp_metadata = {"document": state.get("metadata")}
         else:
-            synthesis = {**state["synthesis"], "ticket_id": ticket.id}  # Part 2 handoff payload
+            worker_results = scrub_obj(state.get("worker_results") or [])
+            departments_needed = sorted(r["department"] for r in worker_results)
+            synthesis = scrub_obj(
+                {
+                    **state["synthesis"],
+                    "ticket_id": ticket.id,  # Part 2 handoff payload
+                    "departments_needed": departments_needed,
+                }
+            )
+
+            ticket.rfp_metadata = {
+                **rfp_fields,
+                "currency": currency_for(rfp_fields.get("client_country")),
+                "departments_needed": departments_needed,
+                "document": state.get("metadata"),
+            }
             session.exec(delete(RfpDepartmentSection).where(RfpDepartmentSection.ticket_id == ticket.id))
-            for result in state.get("worker_results") or []:
+            for result in worker_results:
                 session.add(
                     RfpDepartmentSection(
                         ticket_id=ticket.id,
@@ -80,8 +106,11 @@ def run_ticket(ticket_id: int, engine: Engine) -> None:
                 )
             ticket.synthesis = synthesis
             ticket.summary = synthesis["summary"]
-            ticket.routing_status = ROUTING_READY_FOR_PART2
-            ticket.status = STATUS_ANALYSIS_COMPLETE
+            # With PHI the handoff is blocked until Compliance reviews the ticket.
+            ticket.routing_status = (
+                ROUTING_COMPLIANCE_REVIEW if ticket.contains_phi else ROUTING_READY_FOR_PART2
+            )
+            ticket.status = STATUS_INTAKE_COMPLETE
             ticket.completed_at = _now()
 
         ticket.error_message = None

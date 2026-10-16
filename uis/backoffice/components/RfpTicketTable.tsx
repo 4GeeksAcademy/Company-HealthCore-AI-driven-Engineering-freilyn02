@@ -3,15 +3,15 @@
 import type { RfpStatus, RfpTicket } from "@/types/rfp";
 
 export const STATUS_LABELS: Record<RfpStatus, string> = {
-  analizando: "Analyzing",
-  analisis_completo: "Analysis complete",
-  descartado: "Discarded",
+  analyzing: "Analyzing",
+  intake_complete: "Intake complete",
+  discarded: "Discarded",
 };
 
 export const STATUS_STYLES: Record<RfpStatus, string> = {
-  analizando: "bg-yellow-100 text-yellow-800",
-  analisis_completo: "bg-green-100 text-green-800",
-  descartado: "bg-red-100 text-red-800",
+  analyzing: "bg-yellow-100 text-yellow-800",
+  intake_complete: "bg-green-100 text-green-800",
+  discarded: "bg-red-100 text-red-800",
 };
 
 export function StatusBadge({ status }: { status: RfpStatus }) {
@@ -42,6 +42,7 @@ export default function RfpTicketTable({
           <th className="py-2">#</th>
           <th>File</th>
           <th>Status</th>
+          <th>Compliance</th>
           <th>Uploaded</th>
         </tr>
       </thead>
@@ -58,6 +59,15 @@ export default function RfpTicketTable({
             <td>{ticket.original_filename}</td>
             <td>
               <StatusBadge status={ticket.status} />
+            </td>
+            <td>
+              {ticket.contains_phi ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                  PHI review
+                </span>
+              ) : (
+                <span className="text-xs text-gray-500">-</span>
+              )}
             </td>
             <td>{new Date(ticket.created_at).toLocaleString()}</td>
           </tr>

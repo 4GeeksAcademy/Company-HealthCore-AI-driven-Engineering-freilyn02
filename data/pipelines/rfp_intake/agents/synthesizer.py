@@ -1,11 +1,12 @@
-"""Agent 4: synthesizer. Builds the Sales-facing summary from all workers."""
+"""Agent 4: synthesizer. Builds the Revenue Cycle-facing summary from all workers."""
 from typing import Any
 
 from .. import llm
-from ..config import DEPARTMENTS, ROUTING_NEXT
+from ..config import DEPARTMENTS, ROUTING_NEXT, currency_for
 
-SYSTEM_PROMPT = """You write a 2-3 sentence summary of a client's RFP for the sales
-team, based ONLY on the department findings given. Do not invent figures.
+SYSTEM_PROMPT = """You write a 2-3 sentence summary of a client's RFP for HealthCore's
+Revenue Cycle team, based ONLY on the client data and department findings given.
+Do not invent figures. Never write patient names, diagnoses or identifiers.
 Reply with JSON only: {"summary": "..."}"""
 
 
@@ -14,7 +15,12 @@ def synthesize(
     readability: dict[str, Any],
     worker_results: list[dict[str, Any]],
     unknown_departments: list[str],
+    phi: dict[str, Any] | None = None,
+    rfp_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    rfp_fields = rfp_fields or {}
+    contains_phi = bool(phi and phi.get("contains_phi"))
+
     by_department = []
     for result in sorted(worker_results, key=lambda r: r["department"]):
         by_department.append(
@@ -29,7 +35,7 @@ def synthesize(
         )
 
     try:
-        raw = llm.chat_json(SYSTEM_PROMPT, f"Findings: {by_department}")
+        raw = llm.chat_json(SYSTEM_PROMPT, f"Client: {rfp_fields}\nFindings: {by_department}")
         summary = str(raw.get("summary") or "").strip()
     except llm.LLMError:
         summary = ""
@@ -40,8 +46,11 @@ def synthesize(
     complexity = (readability or {}).get("complexity", "unknown")
     return {
         "summary": summary,
+        "currency": currency_for(rfp_fields.get("client_country")),
         "by_department": by_department,
         "unknown_departments": unknown_departments,
         "readability_estimate": f"{complexity} complexity",
+        "requires_compliance_review": contains_phi,
+        "compliance_flags": ["phi_detected"] if contains_phi else [],
         "routing_next": ROUTING_NEXT,
     }

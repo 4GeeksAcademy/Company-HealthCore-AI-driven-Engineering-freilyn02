@@ -25,7 +25,7 @@ dependencies = [
     "fastmcp>=3.4,<4",
     "mcpauth==0.2.0b1",
     "langchain-mcp-adapters>=0.3.2",
-    "markitdown>=0.1.8",
+    "markitdown[pdf]>=0.1.8",
     "py-readability-metrics>=1.4.5",
 ]
 

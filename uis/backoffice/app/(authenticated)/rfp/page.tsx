@@ -30,7 +30,7 @@ export default function RfpPage() {
   }, [refresh]);
 
   // Poll only while at least one ticket is still being analyzed.
-  const hasActive = tickets.some((t) => t.status === "analizando");
+  const hasActive = tickets.some((t) => t.status === "analyzing");
   useEffect(() => {
     if (!hasActive) return;
     const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
