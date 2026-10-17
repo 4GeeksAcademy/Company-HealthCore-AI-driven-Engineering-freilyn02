@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "services" / "api"))
 
-from sqlmodel import Session, select  # noqa: E402
+from sqlmodel import Session, SQLModel, select  # noqa: E402
 
 from data.pipelines.rfp_intake.models import RfpDraftSection, RfpTicket  # noqa: E402
 from data.pipelines.rfp_response.config import MAX_ITERATIONS  # noqa: E402
@@ -28,6 +28,9 @@ def list_tickets() -> None:
 
 
 def main() -> None:
+    # Same thing the API does on startup: create only the tables that are missing.
+    SQLModel.metadata.create_all(engine, tables=[RfpDraftSection.__table__])
+
     if len(sys.argv) < 2:
         list_tickets()
         return

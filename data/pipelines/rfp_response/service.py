@@ -5,6 +5,9 @@ department sections). It never re-reads the PDF. Only this module changes ticket
 status during Part 2:
     intake_complete -> drafting -> under_evaluation -> (needs_human_review)
 Part 3 statuses are NOT created here.
+
+Every failure path ends in `needs_human_review` (never stuck in `drafting`,
+never `discarded`).
 """
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -104,6 +107,34 @@ def _mark_needs_review(engine: Engine, ticket_id: int, message: str) -> None:
         session.commit()
 
 
+def _persist_results(engine: Engine, ticket_id: int, results: list[dict[str, Any]]) -> None:
+    with Session(engine) as session:
+        ticket = session.get(RfpTicket, ticket_id)
+        if ticket is None:
+            return
+        session.exec(delete(RfpDraftSection).where(RfpDraftSection.ticket_id == ticket_id))
+        for result in results:
+            evaluation = scrub_obj(result["evaluation"])
+            session.add(
+                RfpDraftSection(
+                    ticket_id=ticket_id,
+                    department=result["department"],
+                    content=redact_text(result["content"]),
+                    iterations=result["iterations"],
+                    overall_pass=bool(evaluation.get("overall_pass")),
+                    needs_human_review=result["needs_human_review"],
+                    evaluation=evaluation,
+                )
+            )
+        flagged = any(r["needs_human_review"] for r in results)
+        ticket.status = STATUS_NEEDS_HUMAN_REVIEW if flagged else STATUS_UNDER_EVALUATION
+        ticket.routing_status = ROUTING_READY_FOR_PART3  # flagged sections travel too
+        ticket.error_message = None
+        ticket.updated_at = _now()
+        session.add(ticket)
+        session.commit()
+
+
 def run_generation(ticket_id: int, engine: Engine, max_iterations: int = MAX_ITERATIONS) -> None:
     """Runs Part 2 for one ticket. Never raises. The ticket is never discarded."""
     with Session(engine) as session:
@@ -140,31 +171,10 @@ def run_generation(ticket_id: int, engine: Engine, max_iterations: int = MAX_ITE
         _mark_needs_review(engine, ticket_id, f"{type(exc).__name__}: {exc}")
         return
 
-    with Session(engine) as session:
-        ticket = session.get(RfpTicket, ticket_id)
-        if ticket is None:
-            return
-        session.exec(delete(RfpDraftSection).where(RfpDraftSection.ticket_id == ticket_id))
-        for result in results:
-            evaluation = scrub_obj(result["evaluation"])
-            session.add(
-                RfpDraftSection(
-                    ticket_id=ticket_id,
-                    department=result["department"],
-                    content=redact_text(result["content"]),
-                    iterations=result["iterations"],
-                    overall_pass=bool(evaluation.get("overall_pass")),
-                    needs_human_review=result["needs_human_review"],
-                    evaluation=evaluation,
-                )
-            )
-        flagged = any(r["needs_human_review"] for r in results)
-        ticket.status = STATUS_NEEDS_HUMAN_REVIEW if flagged else STATUS_UNDER_EVALUATION
-        ticket.routing_status = ROUTING_READY_FOR_PART3  # flagged sections travel too
-        ticket.error_message = None
-        ticket.updated_at = _now()
-        session.add(ticket)
-        session.commit()
+    try:
+        _persist_results(engine, ticket_id, results)
+    except Exception as exc:  # e.g. missing table: the ticket must not stay stuck in `drafting`
+        _mark_needs_review(engine, ticket_id, f"Saving drafts failed ({type(exc).__name__}): {exc}")
 
 
 def draft_to_dict(draft: RfpDraftSection) -> dict[str, Any]:
