@@ -1,4 +1,4 @@
-"""SQLModel tables for the RFP intake flow (Milestone 9, Parts 1 and 2).
+"""SQLModel tables for the RFP intake flow (Milestone 9, Parts 1, 2 and 3).
 
 These tables live in the same Supabase/PostgreSQL database as inventory,
 telemetry_events and job_runs (see services/api/database.py).
@@ -8,15 +8,17 @@ Ticket lifecycle (vocabulary from the HealthCore CONTEXT):
                       -> discarded
     Part 2: intake_complete -> drafting -> under_evaluation
                                         -> needs_human_review
-Part 3 statuses (waiting for approval, done, ...) must NOT be set here.
+    Part 3: under_evaluation / needs_human_review -> waiting_for_approval -> done
+            (a revision requested by a human or by arbitration goes back to `drafting`)
 
 HIPAA / UK GDPR: no column in these tables may hold patient identifiers or PHI.
 `phi_findings` only stores COUNTS by type (e.g. {"patient_name": 1}), never values.
+Part 3 trace events store REFERENCES (ids / hashes), never content.
 """
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, JSON, Text
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, JSON, Text, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 # --- Status vocabulary: single source of truth ------------------------------
@@ -31,7 +33,12 @@ STATUS_UNDER_EVALUATION = "under_evaluation"
 STATUS_NEEDS_HUMAN_REVIEW = "needs_human_review"
 PART2_STATUSES = (STATUS_DRAFTING, STATUS_UNDER_EVALUATION, STATUS_NEEDS_HUMAN_REVIEW)
 
-ALL_STATUSES = PART1_STATUSES + PART2_STATUSES
+# Part 3 statuses (human approval + completion).
+STATUS_WAITING_FOR_APPROVAL = "waiting_for_approval"
+STATUS_DONE = "done"
+PART3_STATUSES = (STATUS_WAITING_FOR_APPROVAL, STATUS_DONE)
+
+ALL_STATUSES = PART1_STATUSES + PART2_STATUSES + PART3_STATUSES
 
 # Handoff flag for Part 2 (same API, same DB: no queue service needed).
 ROUTING_PENDING = "pending"
@@ -53,7 +60,8 @@ class RfpTicket(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint(
             "status IN ('analyzing', 'discarded', 'intake_complete', "
-            "'drafting', 'under_evaluation', 'needs_human_review')",
+            "'drafting', 'under_evaluation', 'needs_human_review', "
+            "'waiting_for_approval', 'done')",
             name="ck_rfp_tickets_status",
         ),
         Index("idx_rfp_tickets_status", "status"),
@@ -145,3 +153,69 @@ class RfpDraftSection(SQLModel, table=True):
     updated_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
+
+
+# --- Part 3 tables ----------------------------------------------------------
+
+
+class RfpApproval(SQLModel, table=True):
+    """Part 3: approval state of ONE department section of ONE ticket.
+
+    The draft text itself stays in `rfp_draft_sections.content`; this row holds who
+    approved it, how many revisions it went through and the structured facts the
+    arbitration rules read (covered population, committed capacity). No PHI here.
+    """
+
+    __tablename__ = "rfp_approvals"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "department", name="uq_rfp_approvals_ticket_dept"),
+        CheckConstraint(
+            "approval_status IN ('pending', 'approved', 'rejected', 'changes_requested')",
+            name="ck_rfp_approvals_status",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="rfp_tickets.id", nullable=False, index=True)
+    department: str = Field(max_length=64)
+
+    approval_status: str = Field(default="pending", max_length=32)
+    approver: Optional[str] = Field(default=None, max_length=128)  # normalized owner id
+    approved_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    revision_count: int = Field(default=0)
+    requested_changes: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    structured: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    contains_phi: bool = Field(default=False)
+
+    updated_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class RfpTraceEvent(SQLModel, table=True):
+    """Part 3: one executed node (agent, input ref, output ref, timestamp)."""
+
+    __tablename__ = "rfp_trace_events"
+    __table_args__ = (Index("idx_rfp_trace_ticket", "ticket_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="rfp_tickets.id", nullable=False)
+    ts: str = Field(max_length=32)  # ISO-8601 UTC, second resolution
+    agent: str = Field(max_length=128)
+    department: Optional[str] = Field(default=None, max_length=64)
+    input_ref: str = Field(max_length=512)
+    output_ref: str = Field(max_length=512)
+
+
+class RfpFinalDocument(SQLModel, table=True):
+    """Part 3: the consolidated proposal, stored once every approval is in."""
+
+    __tablename__ = "rfp_final_documents"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="rfp_tickets.id", nullable=False, unique=True)
+    content_md: str = Field(default="", sa_column=Column(Text, nullable=False))
+    path: Optional[str] = Field(default=None, max_length=512)
+    document: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    generated_at: str = Field(max_length=32)

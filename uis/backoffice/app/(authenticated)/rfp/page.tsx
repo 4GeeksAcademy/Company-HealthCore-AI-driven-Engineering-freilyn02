@@ -8,6 +8,8 @@ import { getRfpTicket, listRfpTickets } from "@/lib/rfp";
 import type { RfpTicket } from "@/types/rfp";
 
 const POLL_INTERVAL_MS = 3000;
+// Statuses that change on their own (background pipelines): keep polling while any ticket has one.
+const ACTIVE_STATUSES = ["analyzing", "drafting"];
 
 export default function RfpPage() {
   const [tickets, setTickets] = useState<RfpTicket[]>([]);
@@ -24,13 +26,25 @@ export default function RfpPage() {
     }
   }, []);
 
-  // Initial load.
+  // Initial load (plain promise chain: no synchronous setState in the effect body).
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    listRfpTickets()
+      .then((list) => {
+        if (cancelled) return;
+        setTickets(list);
+        setError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load tickets.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // Poll only while at least one ticket is still being analyzed.
-  const hasActive = tickets.some((t) => t.status === "analyzing");
+  // Poll only while at least one ticket is still being processed in the background.
+  const hasActive = tickets.some((t) => ACTIVE_STATUSES.includes(t.status));
   useEffect(() => {
     if (!hasActive) return;
     const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
@@ -69,7 +83,7 @@ export default function RfpPage() {
         </p>
       )}
       <RfpTicketTable tickets={tickets} selectedId={selectedId} onSelect={setSelectedId} />
-      {selected && selected.id === selectedId && <RfpTicketDetail ticket={selected} />}
+      {selected && selected.id === selectedId && <RfpTicketDetail ticket={selected} onChanged={refresh} />}
     </main>
   );
 }

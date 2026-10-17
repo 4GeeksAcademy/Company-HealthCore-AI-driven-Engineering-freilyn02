@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { generateRfpResponse } from "@/lib/rfp";
 import type { RfpTicket } from "@/types/rfp";
+import RfpApprovalPanel from "./RfpApprovalPanel";
 import { StatusBadge } from "./RfpTicketTable";
 
 function MetadataField({ label, value }: { label: string; value: string | number | null | undefined }) {
@@ -12,8 +15,43 @@ function MetadataField({ label, value }: { label: string; value: string | number
   );
 }
 
-export default function RfpTicketDetail({ ticket }: { ticket: RfpTicket }) {
+// Statuses in which Part 1 already produced the synthesis the departments read.
+const HAS_SYNTHESIS = [
+  "intake_complete",
+  "drafting",
+  "under_evaluation",
+  "needs_human_review",
+  "waiting_for_approval",
+  "done",
+];
+// Statuses in which the approval panel is relevant (Part 2 finished or Part 3 running).
+const HAS_APPROVALS = ["under_evaluation", "needs_human_review", "waiting_for_approval", "done"];
+
+export default function RfpTicketDetail({
+  ticket,
+  onChanged,
+}: {
+  ticket: RfpTicket;
+  onChanged: () => void;
+}) {
   const meta = ticket.rfp_metadata;
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      await generateRfpResponse(ticket.id);
+      onChanged();
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : "Could not start the response generation.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const canGenerate = ticket.status === "intake_complete" && ticket.routing_status === "ready_for_part2";
 
   return (
     <section className="flex flex-col gap-4 rounded-lg border border-gray-300 p-4">
@@ -46,6 +84,10 @@ export default function RfpTicketDetail({ ticket }: { ticket: RfpTicket }) {
         <p className="text-sm text-gray-500">Analyzing... this page refreshes automatically.</p>
       )}
 
+      {ticket.status === "drafting" && (
+        <p className="text-sm text-gray-500">Drafting the response... this page refreshes automatically.</p>
+      )}
+
       {ticket.status === "discarded" && (
         <div className="rounded bg-red-50 p-3 text-sm text-red-800">
           <p className="font-medium">This document was discarded.</p>
@@ -56,7 +98,25 @@ export default function RfpTicketDetail({ ticket }: { ticket: RfpTicket }) {
         </div>
       )}
 
-      {ticket.status === "intake_complete" && ticket.synthesis && (
+      {canGenerate && (
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => void handleGenerate()}
+            disabled={generating}
+            className="w-fit rounded bg-blue-600 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            {generating ? "Starting..." : "Generate response"}
+          </button>
+          {generateError && (
+            <p role="alert" className="text-sm text-red-600">
+              {generateError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {HAS_SYNTHESIS.includes(ticket.status) && ticket.synthesis && (
         <>
           <p className="text-sm">{ticket.synthesis.summary}</p>
 
@@ -113,6 +173,8 @@ export default function RfpTicketDetail({ ticket }: { ticket: RfpTicket }) {
           </div>
         </>
       )}
+
+      {HAS_APPROVALS.includes(ticket.status) && <RfpApprovalPanel key={ticket.id} ticket={ticket} onChanged={onChanged} />}
     </section>
   );
 }
