@@ -79,3 +79,24 @@ def test_on_phase_reports_drafting_then_evaluating(monkeypatch):
     phases = []
     run_section_loop("revenue", make_handoff(), on_phase=lambda dept, phase: phases.append(phase))
     assert phases == ["drafting", "evaluating"]
+
+
+def test_loop_stops_early_when_only_an_evaluator_is_unavailable(monkeypatch):
+    calls = []
+
+    def gen(department, handoff, feedback=None, previous_draft=None):
+        calls.append(1)
+        return "draft v1"
+
+    def broken_evaluator(department, content, handoff):
+        result = evaluation(False)
+        result["evaluator_unavailable"] = True
+        return result
+
+    monkeypatch.setattr(generators, "generate_section", gen)
+    monkeypatch.setattr(evaluators, "evaluate_section", broken_evaluator)
+
+    result = run_section_loop("revenue", make_handoff(), max_iterations=3)
+    assert len(calls) == 1  # regenerating cannot fix a broken evaluator
+    assert result["needs_human_review"] is True
+    assert result["content"] == "draft v1"

@@ -5,6 +5,10 @@
 They are merged into one structured EvaluationResult, so no evaluator writes into a
 shared state (no race between parallel evaluators). Each one only receives the
 section it must review plus the small piece of handoff it needs.
+
+If the relevance evaluator cannot run (LLM down after retries) it FAILS CLOSED and is
+marked `unavailable`: the section is never approved by accident, and the generator is
+not asked to "fix" something it cannot fix.
 """
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -12,6 +16,7 @@ from typing import Any
 from ..rfp_intake import llm
 from . import config
 from .guidelines import check_guidelines
+from .llm_retry import chat_json_resilient
 
 RELEVANCE_SYSTEM = """You check whether a proposal section answers what an RFP asks of ONE department.
 You receive the RFP needs for that department and the draft section.
@@ -63,10 +68,15 @@ def evaluate_relevance(content: str, handoff: dict[str, Any]) -> dict[str, Any]:
         f"<draft_section>\n{content}\n</draft_section>"
     )
     try:
-        raw = llm.chat_json(RELEVANCE_SYSTEM, user)
-    except llm.LLMError:
+        raw = chat_json_resilient(RELEVANCE_SYSTEM, user)
+    except llm.LLMError as exc:
         # Fail closed: an evaluator that cannot run must not approve the section.
-        return {"pass": False, "missing_aspects": ["Relevance evaluator unavailable: manual check needed."]}
+        return {
+            "pass": False,
+            "unavailable": True,
+            "missing_aspects": [],
+            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        }
     missing = [str(x).strip() for x in (raw.get("missing_aspects") or []) if str(x).strip()]
     return {"pass": not missing, "missing_aspects": missing}
 
@@ -79,7 +89,8 @@ def _build_feedback(readability: dict, relevance: dict, compliance: dict) -> str
     lines: list[str] = []
     if not readability["pass"]:
         lines.append(f"Readability: {readability['details'].get('message', 'score too low.')}")
-    if not relevance["pass"]:
+    # An unavailable evaluator is not something the generator can fix: no feedback for it.
+    if not relevance["pass"] and not relevance.get("unavailable"):
         lines.append(
             "Relevance: the section does not address: "
             + "; ".join(relevance["missing_aspects"])
@@ -108,5 +119,6 @@ def evaluate_section(department: str, content: str, handoff: dict[str, Any]) -> 
         "relevance": relevance,
         "compliance": compliance,
         "overall_pass": overall,
+        "evaluator_unavailable": bool(relevance.get("unavailable")),
         "feedback_for_generator": "" if overall else _build_feedback(readability, relevance, compliance),
     }

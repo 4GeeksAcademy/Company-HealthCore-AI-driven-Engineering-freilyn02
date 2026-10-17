@@ -5,6 +5,8 @@
 
 If the limit is exhausted the LAST draft and its EvaluationResult are kept and the
 section is flagged `needs_human_review`. It is never dropped.
+If the only problem is that an evaluator could not run, regenerating cannot help:
+the loop stops early and asks for a human.
 """
 from typing import Any, Callable
 
@@ -46,7 +48,7 @@ def run_section_loop(
                 department, handoff, feedback=feedback, previous_draft=draft or None
             )
         except Exception as exc:  # a failing generator must not kill the ticket
-            failure = f"Generation failed ({type(exc).__name__}): needs manual review."
+            failure = f"Generation failed ({type(exc).__name__}: {str(exc)[:200]}): needs manual review."
             break
 
         if on_phase:
@@ -62,6 +64,14 @@ def run_section_loop(
                 "needs_human_review": False,
             }
         feedback = evaluation["feedback_for_generator"]
+
+        # Only a broken evaluator is blocking: another rewrite cannot fix that.
+        if (
+            evaluation.get("evaluator_unavailable")
+            and evaluation["readability"]["pass"]
+            and evaluation["compliance"]["pass"]
+        ):
+            break
 
     if evaluation is None:
         evaluation = _failed_evaluation(department, failure or "No evaluation was produced.")

@@ -12,6 +12,14 @@ def fake_llm(monkeypatch, payload):
     monkeypatch.setattr(llm, "chat_json", lambda system, user, **kwargs: payload)
 
 
+def llm_down(monkeypatch):
+    def boom(system, user, **kwargs):
+        raise llm.LLMError("down")
+
+    monkeypatch.setattr(llm, "chat_json", boom)
+    monkeypatch.setattr(config, "LLM_RETRY_BASE_DELAY", 0)  # no waiting in tests
+
+
 # --- readability --------------------------------------------------------------
 def test_readability_passes_for_simple_text():
     result = evaluators.evaluate_readability(LONG_SIMPLE_TEXT)
@@ -39,12 +47,12 @@ def test_relevance_fails_with_missing_aspects(monkeypatch):
     assert result == {"pass": False, "missing_aspects": ["Pricing per employee"]}
 
 
-def test_relevance_fails_closed_when_the_llm_is_down(monkeypatch):
-    def boom(system, user, **kwargs):
-        raise llm.LLMError("down")
-
-    monkeypatch.setattr(llm, "chat_json", boom)
-    assert evaluators.evaluate_relevance("draft", make_handoff())["pass"] is False
+def test_relevance_fails_closed_and_is_marked_unavailable_when_the_llm_is_down(monkeypatch):
+    llm_down(monkeypatch)
+    result = evaluators.evaluate_relevance("draft", make_handoff())
+    assert result["pass"] is False
+    assert result["unavailable"] is True
+    assert "LLMError" in result["error"]
 
 
 # --- compliance, anchored to the CONTEXT rules --------------------------------
@@ -83,6 +91,7 @@ def test_evaluate_section_passes_when_all_three_pass(monkeypatch):
     fake_llm(monkeypatch, {"missing_aspects": []})
     result = evaluators.evaluate_section("clinical", LONG_SIMPLE_TEXT, make_handoff("clinical"))
     assert result["overall_pass"] is True
+    assert result["evaluator_unavailable"] is False
     assert result["feedback_for_generator"] == ""
 
 
@@ -93,3 +102,11 @@ def test_evaluate_section_fails_with_concrete_feedback(monkeypatch):
     assert result["overall_pass"] is False
     assert "Pricing per employee" in result["feedback_for_generator"]
     assert "GUIDELINE_CURRENCY_MATCHES_COUNTRY" in result["feedback_for_generator"]
+
+
+def test_unavailable_evaluator_blocks_approval_but_gives_no_useless_feedback(monkeypatch):
+    llm_down(monkeypatch)
+    result = evaluators.evaluate_section("clinical", LONG_SIMPLE_TEXT, make_handoff("clinical"))
+    assert result["overall_pass"] is False
+    assert result["evaluator_unavailable"] is True
+    assert result["feedback_for_generator"] == ""
