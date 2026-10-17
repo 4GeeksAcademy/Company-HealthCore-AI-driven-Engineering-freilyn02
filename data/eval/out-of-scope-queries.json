@@ -1,0 +1,10 @@
+[
+  {"id": "o01", "kind": "off-topic", "question": "What is the capital of France?"},
+  {"id": "o02", "kind": "off-topic", "question": "How do I bake a chocolate cake?"},
+  {"id": "o03", "kind": "off-topic", "question": "Who won the football match last night?"},
+  {"id": "o04", "kind": "off-topic", "question": "Can you recommend a good laptop for programming?"},
+  {"id": "o05", "kind": "near-domain", "question": "What are the clinic opening hours on weekends?"},
+  {"id": "o06", "kind": "near-domain", "question": "How much does an MRI scan cost?"},
+  {"id": "o07", "kind": "near-domain", "question": "What is the phone number of the Manchester clinic?"},
+  {"id": "o08", "kind": "near-domain", "question": "Do you offer dental or cosmetic surgery services?"}
+]

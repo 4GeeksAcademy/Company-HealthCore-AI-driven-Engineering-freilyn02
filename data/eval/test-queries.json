@@ -1,0 +1,114 @@
+[
+  {
+    "id": "q01",
+    "question": "Does HealthCore accept Medicaid at its Georgia clinics?",
+    "expected_source_document": "insurance-coverage",
+    "expected_chunk_index": 0,
+    "expected_section": "United States (Texas, Florida, Georgia)"
+  },
+  {
+    "id": "q02",
+    "question": "I don't have insurance. Can I get a discount if I pay on the day of my visit?",
+    "expected_source_document": "insurance-coverage",
+    "expected_chunk_index": 0,
+    "expected_section": "United States (Texas, Florida, Georgia)"
+  },
+  {
+    "id": "q03",
+    "question": "Can I use the NHS at HealthCore's clinics in London?",
+    "expected_source_document": "insurance-coverage",
+    "expected_chunk_index": 1,
+    "expected_section": "United Kingdom (London and Manchester)"
+  },
+  {
+    "id": "q04",
+    "question": "Do you accept my insurance, Humana?",
+    "expected_source_document": "insurance-coverage",
+    "expected_chunk_index": 2,
+    "expected_section": "Unlisted insurers: verify with billing"
+  },
+  {
+    "id": "q05",
+    "question": "How soon can I get a routine appointment?",
+    "expected_source_document": "appointment-policy",
+    "expected_chunk_index": 0,
+    "expected_section": "Booking appointments"
+  },
+  {
+    "id": "q06",
+    "question": "How much is the fee if I miss my appointment without cancelling?",
+    "expected_source_document": "appointment-policy",
+    "expected_chunk_index": 1,
+    "expected_section": "Cancellation policy"
+  },
+  {
+    "id": "q07",
+    "question": "Will I be charged a no-show fee if I am on Medicare?",
+    "expected_source_document": "appointment-policy",
+    "expected_chunk_index": 1,
+    "expected_section": "Cancellation policy"
+  },
+  {
+    "id": "q08",
+    "question": "When do I get appointment reminders, and can I reschedule from them?",
+    "expected_source_document": "appointment-policy",
+    "expected_chunk_index": 2,
+    "expected_section": "Automated reminders"
+  },
+  {
+    "id": "q09",
+    "question": "What happens if a patient has missed three appointments in the last six months?",
+    "expected_source_document": "appointment-policy",
+    "expected_chunk_index": 3,
+    "expected_section": "Flag for 3 no-shows in 6 months"
+  },
+  {
+    "id": "q10",
+    "question": "What are the steps when my doctor refers me to a specialist?",
+    "expected_source_document": "referral-process",
+    "expected_chunk_index": 0,
+    "expected_section": "Standard referral process"
+  },
+  {
+    "id": "q11",
+    "question": "How long does a referral usually take until I have an appointment?",
+    "expected_source_document": "referral-process",
+    "expected_chunk_index": 1,
+    "expected_section": "Target completed-referral time"
+  },
+  {
+    "id": "q12",
+    "question": "A patient has not received appointment options a week after the referral. Who should the coordinator escalate to?",
+    "expected_source_document": "referral-process",
+    "expected_chunk_index": 2,
+    "expected_section": "Escalation after 5 business days"
+  },
+  {
+    "id": "q13",
+    "question": "Can I be referred to a specialist who is outside the HealthCore network?",
+    "expected_source_document": "referral-process",
+    "expected_chunk_index": 3,
+    "expected_section": "Referrals outside the HealthCore network"
+  },
+  {
+    "id": "q14",
+    "question": "What does a new patient have to complete before the first appointment?",
+    "expected_source_document": "new-patient-checklist",
+    "expected_chunk_index": 0,
+    "expected_section": "Requirements before the first appointment"
+  },
+  {
+    "id": "q15",
+    "question": "Which documents should I bring on the day of my appointment?",
+    "expected_source_document": "new-patient-checklist",
+    "expected_chunk_index": 1,
+    "expected_section": "Documents the patient should bring on the day of the appointment"
+  },
+  {
+    "id": "q16",
+    "question": "What if I did not fill in the medical history form before my visit?",
+    "expected_source_document": "new-patient-checklist",
+    "expected_chunk_index": 2,
+    "expected_section": "Incomplete medical history form"
+  }
+]
