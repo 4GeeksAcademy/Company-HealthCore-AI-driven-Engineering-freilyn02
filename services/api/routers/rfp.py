@@ -1,8 +1,9 @@
-"""RFP intake endpoints (Milestone 9, Part 1).
+"""RFP endpoints (Milestone 9, Parts 1 and 2).
 
-Thin HTTP layer on the EXISTING API: it only stores the PDF, creates the ticket,
-enqueues the background pipeline and answers status queries. The LangGraph
-lives in data/pipelines/rfp_intake/ and is never owned by this router.
+Thin HTTP layer on the EXISTING API: it stores the PDF, creates the ticket,
+enqueues the background pipelines and answers status queries. The LangGraph
+(Part 1) and the generator/evaluator loop (Part 2) live in data/pipelines/ and
+are never owned by this router.
 """
 import re
 import sys
@@ -19,8 +20,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from app.core.deps import get_current_user  # noqa: E402
 from data.pipelines.rfp_intake.convert import RAW_RFP_DIR  # noqa: E402
-from data.pipelines.rfp_intake.models import RfpTicket  # noqa: E402
+from data.pipelines.rfp_intake.models import RfpDraftSection, RfpTicket  # noqa: E402
 from data.pipelines.rfp_intake.service import create_ticket, run_ticket, ticket_to_dict  # noqa: E402
+from data.pipelines.rfp_response.service import (  # noqa: E402
+    draft_to_dict,
+    is_eligible,
+    run_generation,
+    start_generation,
+)
 from database import engine, get_db  # noqa: E402
 
 router = APIRouter(prefix="/rfp", tags=["rfp"])
@@ -72,3 +79,44 @@ def get_ticket(ticket_id: int, session: Session = Depends(get_db), current_user:
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket_to_dict(session, ticket)
+
+
+@router.post("/tickets/{ticket_id}/generate", status_code=202)
+def generate_response(
+    ticket_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Part 2: drafts one section per department and evaluates it, in the background."""
+    ticket = session.get(RfpTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if not is_eligible(ticket):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "The ticket is not ready for response generation (Part 1 not finished, "
+                "already drafting, or blocked until Compliance reviews detected PHI).",
+                "status": ticket.status,
+                "routing_status": ticket.routing_status,
+            },
+        )
+    start_generation(session, ticket)  # status = drafting, synchronously
+    background_tasks.add_task(run_generation, ticket.id, engine)
+    return JSONResponse(status_code=202, content={"ticket_id": ticket.id, "status": ticket.status})
+
+
+@router.get("/tickets/{ticket_id}/drafts")
+def get_drafts(ticket_id: int, session: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    """Part 3 handoff: every department draft + its EvaluationResult (flagged ones included)."""
+    ticket = session.get(RfpTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    drafts = session.exec(select(RfpDraftSection).where(RfpDraftSection.ticket_id == ticket_id)).all()
+    return {
+        "ticket_id": ticket.id,
+        "status": ticket.status,
+        "routing_status": ticket.routing_status,
+        "drafts": [draft_to_dict(d) for d in drafts],
+    }

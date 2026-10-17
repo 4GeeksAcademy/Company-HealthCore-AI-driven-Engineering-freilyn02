@@ -1,12 +1,14 @@
-"""SQLModel tables for the RFP intake flow (Milestone 9, Part 1).
+"""SQLModel tables for the RFP intake flow (Milestone 9, Parts 1 and 2).
 
 These tables live in the same Supabase/PostgreSQL database as inventory,
 telemetry_events and job_runs (see services/api/database.py).
 
-Ticket lifecycle in Part 1 (vocabulary from the HealthCore CONTEXT):
-    analyzing -> intake_complete
-              -> discarded
-Statuses of Parts 2 and 3 (drafting, under_evaluation, ...) must NOT be set here.
+Ticket lifecycle (vocabulary from the HealthCore CONTEXT):
+    Part 1: analyzing -> intake_complete
+                      -> discarded
+    Part 2: intake_complete -> drafting -> under_evaluation
+                                        -> needs_human_review
+Part 3 statuses (waiting for approval, done, ...) must NOT be set here.
 
 HIPAA / UK GDPR: no column in these tables may hold patient identifiers or PHI.
 `phi_findings` only stores COUNTS by type (e.g. {"patient_name": 1}), never values.
@@ -14,7 +16,7 @@ HIPAA / UK GDPR: no column in these tables may hold patient identifiers or PHI.
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, JSON
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, JSON, Text
 from sqlmodel import Field, SQLModel
 
 # --- Status vocabulary: single source of truth ------------------------------
@@ -23,11 +25,21 @@ STATUS_DISCARDED = "discarded"
 STATUS_INTAKE_COMPLETE = "intake_complete"
 PART1_STATUSES = (STATUS_ANALYZING, STATUS_DISCARDED, STATUS_INTAKE_COMPLETE)
 
+# Part 2 statuses (response generation + evaluation).
+STATUS_DRAFTING = "drafting"
+STATUS_UNDER_EVALUATION = "under_evaluation"
+STATUS_NEEDS_HUMAN_REVIEW = "needs_human_review"
+PART2_STATUSES = (STATUS_DRAFTING, STATUS_UNDER_EVALUATION, STATUS_NEEDS_HUMAN_REVIEW)
+
+ALL_STATUSES = PART1_STATUSES + PART2_STATUSES
+
 # Handoff flag for Part 2 (same API, same DB: no queue service needed).
 ROUTING_PENDING = "pending"
 ROUTING_READY_FOR_PART2 = "ready_for_part2"
 # PHI was detected: Part 2 must not start until Compliance reviews the ticket.
 ROUTING_COMPLIANCE_REVIEW = "compliance_review_required"
+# Handoff flag for Part 3: drafts + EvaluationResults are stored for every department.
+ROUTING_READY_FOR_PART3 = "ready_for_part3"
 
 
 def _utcnow() -> datetime:
@@ -40,7 +52,8 @@ class RfpTicket(SQLModel, table=True):
     __tablename__ = "rfp_tickets"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('analyzing', 'discarded', 'intake_complete')",
+            "status IN ('analyzing', 'discarded', 'intake_complete', "
+            "'drafting', 'under_evaluation', 'needs_human_review')",
             name="ck_rfp_tickets_status",
         ),
         Index("idx_rfp_tickets_status", "status"),
@@ -101,5 +114,34 @@ class RfpDepartmentSection(SQLModel, table=True):
     suggested_contact_role: Optional[str] = Field(default=None, max_length=255)
 
     created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+
+class RfpDraftSection(SQLModel, table=True):
+    """Part 2 output: the last draft of one department + its EvaluationResult.
+
+    A section that exhausted the iteration limit is NOT dropped: it is stored with
+    `needs_human_review = True` and still travels in the handoff to Part 3.
+    """
+
+    __tablename__ = "rfp_draft_sections"
+    __table_args__ = (Index("idx_rfp_drafts_ticket", "ticket_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: int = Field(foreign_key="rfp_tickets.id", nullable=False)
+    department: str = Field(max_length=64)
+
+    content: str = Field(default="", sa_column=Column(Text, nullable=False))  # markdown draft
+    iterations: int = Field(default=0)
+    overall_pass: bool = Field(default=False)
+    needs_human_review: bool = Field(default=False)
+    # EvaluationResult: readability / relevance / compliance / overall_pass / feedback.
+    evaluation: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+
+    created_at: datetime = Field(
+        default_factory=_utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    updated_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(DateTime(timezone=True), nullable=False)
     )
