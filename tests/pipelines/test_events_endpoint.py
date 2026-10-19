@@ -32,6 +32,10 @@ EVENT_NAME = "rfp_ticket_created"
 REQUIRED_FIELDS = {"id", "status", "original_filename", "created_at"}
 INITIAL_STATUS = "analyzing"
 
+# Generous on purpose: these are failure deadlines, not delays. A passing test never waits for them.
+CONNECT_TIMEOUT = 15.0  # request -> ": connected" (first request through a fresh app)
+LIVE_TIMEOUT = 5.0  # ": connected" -> the event / replay / close the test is waiting for
+
 
 # --- helpers ---------------------------------------------------------------
 
@@ -51,13 +55,21 @@ async def call_stream(
     until: Callable[[str], bool] | None = None,
     after_connected: Callable[[], None] | None = None,
     settle: float = 0.0,
-    timeout: float = 3.0,
+    timeout: float = LIVE_TIMEOUT,
+    connect_timeout: float = CONNECT_TIMEOUT,
 ) -> StreamResult:
     """GET /events/stream over ASGI and return what the server sent.
 
     Reads until `until(body)` is true (or the response ends by itself, e.g. a 401), waits `settle`
     seconds to catch anything unexpected that follows, then disconnects like a closed browser tab.
     `after_connected` runs once, as soon as the ": connected" comment arrived.
+
+    Two separate clocks, so a slow start can never be mistaken for a slow stream:
+    - `connect_timeout`: from the request until ": connected" arrives (first-request overhead);
+    - `timeout`: the wait for what the test expects (live events, replay, close). It starts only
+      after ": connected" arrived AND `after_connected` returned, so time spent inside the hook
+      (it blocks the event loop while it runs) is never charged to the stream.
+    A response that ends by itself (401) needs no ": connected" and stops the loop at once.
     """
     scope = {
         "type": "http",
@@ -93,9 +105,9 @@ async def call_stream(
             result.body += message.get("body", b"").decode()
 
     task = asyncio.create_task(app(scope, receive, send))
-    connected_hook_done = after_connected is None
+    connected = False
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    deadline = loop.time() + connect_timeout
     try:
         while True:
             try:
@@ -104,13 +116,16 @@ async def call_stream(
                 if task.done() and inbox.empty():
                     result.finished_on_its_own = True
                     break
-            if not connected_hook_done and ": connected" in result.body:
-                connected_hook_done = True
-                after_connected()
+            if not connected and ": connected" in result.body:
+                connected = True
+                if after_connected is not None:
+                    after_connected()
+                deadline = loop.time() + timeout  # the live-event clock starts here
             if until is not None and until(result.body):
                 break
             if loop.time() > deadline:
-                pytest.fail(f"stream did not reach the expected state in {timeout}s; got: {result.body!r}")
+                phase = f"live events ({timeout}s)" if connected else f"connect ({connect_timeout}s)"
+                pytest.fail(f"stream did not reach the expected state, timed out in {phase}; got: {result.body!r}")
         if not result.finished_on_its_own:
             if settle:
                 await asyncio.sleep(settle)
@@ -167,6 +182,15 @@ def created_payload(ticket_id: int) -> dict:
 
 
 # --- fixtures --------------------------------------------------------------
+
+
+@pytest.fixture(scope="module", autouse=True)
+def warm_up_heavy_imports() -> None:
+    """Pay the one-time import cost (routers.rfp pulls in the database layer and the pipelines
+    package: ~1.5 s warm, ~7 s without a bytecode cache) before any test starts its clock.
+    Without this, whichever test calls created_payload() first blocks the event loop for that
+    long inside its own stream, and fails when it runs first."""
+    created_payload(0)
 
 
 @pytest.fixture
