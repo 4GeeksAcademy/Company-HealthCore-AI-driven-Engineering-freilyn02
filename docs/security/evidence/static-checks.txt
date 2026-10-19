@@ -1,0 +1,81 @@
+]633;E;echo "## Raw SQL / string-built queries";6f2a285c-42b4-40c0-a1b6-1c99708b0476]633;C## Raw SQL / string-built queries
+services/api/app/core/security.py:24:pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+services/api/telemetry.py:186:            db.execute(insert(TelemetryEventRecord), valid_rows)
+services/api/agent/memory/store.py:137:        pipe.execute()
+services/api/agent/memory/store.py:147:        pipe.execute()
+services/api/agent/memory/confirm.py:46:        text = llm.chat_text(
+services/api/agent/memory/turn.py:81:    text = llm.chat_text(
+services/api/agent/memory/turn.py:87:                    f"CONTEXT:\n{_format_context(context)}\n\n"
+services/api/agent/memory/audit.py:41:def sanitize_text(text: str | None) -> str | None:
+services/api/agent/memory/audit.py:76:        pipe.execute()
+services/api/agent/memory/proposal.py:110:        user_message=sanitize_text(user_message),
+services/api/agent/memory/llm.py:19:def chat_text(messages: list[dict], temperature: float = 0.0, timeout: float = 60.0) -> str:
+services/api/agent/tracing.py:37:    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+services/api/agent/tracing.py:42:    return json.loads((TRACE_DIR / f"{run_id}.json").read_text())
+data/eval/evaluate_retrieval.py:24:    return json.loads((EVAL_DIR / file_name).read_text(encoding="utf-8"))
+data/pipelines/rag.py:135:def _format_context(context: list[dict]) -> str:
+data/pipelines/rag.py:162:                    "content": f"CONTEXT:\n{_format_context(context)}\n\nQUESTION:\n{question.strip()}",
+data/pipelines/rfp_intake/service.py:56:            ticket.error_message = redact_text(f"{type(exc).__name__}: {exc}")[:1000]
+data/pipelines/rfp_intake/service.py:72:        ticket.classifier_reason = redact_text(classification["reason"])
+data/pipelines/rfp_intake/convert.py:44:    md_path.write_text(text, encoding="utf-8")
+data/pipelines/rfp_intake/phi.py:96:def redact_text(text: str) -> str:
+data/pipelines/rfp_intake/phi.py:104:        return redact_text(obj)
+data/pipelines/rfp_response/service.py:104:        ticket.error_message = redact_text(message)[:1000]
+data/pipelines/rfp_response/service.py:122:                    content=redact_text(result["content"]),
+data/pipelines/rfp_response/guidelines.py:36:def _allowed_text(handoff: dict[str, Any]) -> str:
+data/pipelines/rfp_response/guidelines.py:87:    allowed = _allowed_text(handoff)
+data/pipelines/rfp_produce/store.py:47:            conn.executescript(
+data/pipelines/rfp_produce/store.py:75:        conn.execute("PRAGMA journal_mode=WAL")
+data/pipelines/rfp_produce/store.py:81:            conn.execute(
+data/pipelines/rfp_produce/store.py:88:            row = conn.execute(
+data/pipelines/rfp_produce/store.py:97:            row = conn.execute(
+data/pipelines/rfp_produce/store.py:106:            cur = conn.execute(
+data/pipelines/rfp_produce/store.py:115:            conn.execute(
+data/pipelines/rfp_produce/store.py:123:            row = conn.execute(
+data/pipelines/rfp_produce/store.py:133:            rows = conn.execute(
+data/pipelines/rfp_produce/store.py:141:            conn.execute(
+data/pipelines/rfp_produce/store.py:148:            rows = conn.execute(
+data/pipelines/rfp_produce/store.py:156:            conn.execute(
+data/pipelines/rfp_produce/store.py:164:            row = conn.execute(
+data/pipelines/rfp_produce/factory.py:87:        content = redact_text(draft or "")
+data/pipelines/rfp_produce/synthesizer.py:117:    path.write_text(markdown, encoding="utf-8")
+data/pipelines/rfp_produce/sql_store.py:126:    if redact_text(text) != text:
+data/process/rag.py:152:        chunks.extend(_split_document(path.read_text(encoding="utf-8"), source_document))
+
+## Unsafe deserialization / command execution
+services/api/routers/rfp.py:92:    tickets = session.exec(select(RfpTicket).order_by(RfpTicket.created_at.desc())).all()
+services/api/routers/rfp.py:136:    drafts = session.exec(select(RfpDraftSection).where(RfpDraftSection.ticket_id == ticket_id)).all()
+services/api/routers/inventory.py:29:    delivered = session.exec(
+services/api/routers/inventory.py:34:    consumed = session.exec(
+services/api/routers/inventory.py:61:    supplies = session.exec(select(MedicalSupply)).all()
+services/api/routers/inventory.py:149:    supplies_by_id = {s.id: s for s in session.exec(select(MedicalSupply)).all()}
+services/api/routers/inventory.py:151:    deliveries = session.exec(select(SupplyDelivery)).all()
+services/api/routers/inventory.py:152:    consumptions = session.exec(select(SupplyConsumption)).all()
+services/api/seed_inventory.py:32:        existing = session.exec(
+services/api/seed_inventory.py:48:    if session.exec(select(SupplyDelivery)).first() is not None:
+services/api/seed_inventory.py:76:    if session.exec(select(SupplyConsumption)).first() is not None:
+services/api/job_runner.py:67:        return session.exec(statement).first() is not None
+services/api/job_runner.py:79:        return session.exec(statement).first() is not None
+services/api/telemetry_report/analysis.py:55:    rows = db.exec(query).all()
+data/pipelines/rfp_intake/service.py:96:            session.exec(delete(RfpDepartmentSection).where(RfpDepartmentSection.ticket_id == ticket.id))
+data/pipelines/rfp_intake/service.py:125:        sections = session.exec(
+data/pipelines/rfp_response/service.py:67:    sections = session.exec(select(RfpDepartmentSection).where(RfpDepartmentSection.ticket_id == ticket.id)).all()
+data/pipelines/rfp_response/service.py:115:        session.exec(delete(RfpDraftSection).where(RfpDraftSection.ticket_id == ticket_id))
+data/pipelines/rfp_produce/sql_store.py:186:        return session.exec(
+data/pipelines/rfp_produce/sql_store.py:194:        row = session.exec(
+data/pipelines/rfp_produce/sql_store.py:240:            drafts = session.exec(
+data/pipelines/rfp_produce/sql_store.py:303:            rows = session.exec(
+data/pipelines/rfp_produce/sql_store.py:323:            row = session.exec(
+data/pipelines/rfp_produce/sql_store.py:337:            row = session.exec(
+data/pipelines/rfp_produce/sql_store.py:344:            row = session.exec(
+
+## Outbound HTTP calls
+services/api/agent/memory/llm.py:21:    response = httpx.post(
+services/api/agent/harness/casual.py:26:        response = httpx.post(
+services/api/agent/mcp_client.py:69:        response = httpx.post(url, data=payload, timeout=MCP_TIMEOUT_SECONDS)
+data/pipelines/rag.py:152:    response = httpx.post(
+data/pipelines/rfp_intake/llm.py:61:            response = httpx.post(
+data/process/rag.py:189:        response = httpx.post(
+mcps/company-tools/http_client.py:21:def build_client(base_url: str, settings: Settings) -> httpx.AsyncClient:
+mcps/company-tools/http_client.py:22:    return httpx.AsyncClient(
+mcps/company-tools/tools/inventory.py:64:async def _login(client: httpx.AsyncClient, settings: Settings) -> dict[str, str]:

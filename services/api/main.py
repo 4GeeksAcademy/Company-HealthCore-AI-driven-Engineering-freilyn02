@@ -1,23 +1,7 @@
- feature/message-queue-async-tasks
-"""FastAPI app: HealthCore API — Auth, Supplier Directory, and Centralized Incident Manager."""
-import logging
-
-< feature/background-processes
-"""FastAPI app: HealthCore API - Auth, Supplier Directory, Centralized Incident Manager, Inventory Management, and Business Performance Reporting."""
+"""FastAPI app: HealthCore API - Auth, Supplier Directory, Centralized Incident Manager, Inventory Management, Business Performance Reporting, and Knowledge Base."""
 import logging
 import sys
 from pathlib import Path
-
- feature/business-performance-pipeline
-﻿"""FastAPI app: HealthCore API - Auth, Supplier Directory, and Centralized Incident Manager."""
-import logging
-import sys
-from pathlib import Path
-
-"""FastAPI app: HealthCore API — Auth, Supplier Directory, Centralized Incident Manager, and Inventory Management."""
-import logging
-main
- main
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -35,14 +19,12 @@ import repository
 import users_repository
 from app.core.deps import get_current_user
 from app.core.security import create_access_token, verify_password
- feature/message-queue-async-tasks
 from celery_app import celery_app
-from database import incidents_table
-from dlq_models import init_dlq_table
-
 from database import engine, incidents_table
+from dlq_models import init_dlq_table
 from routers.inventory import router as inventory_router
- main
+from routers.knowledge import router as knowledge_router
+from routers.rfp import router as rfp_router
 from models import (
     Incident,
     IncidentCreate,
@@ -61,7 +43,7 @@ from models import (
     ValidationErrorBody,
     VALID_STATUS_TRANSITIONS,
 )
- feature/message-queue-async-tasks
+from routers.agent import router as agent_router
 from tasks import generate_incident_summary_task
 
 logger = logging.getLogger(__name__)
@@ -71,7 +53,6 @@ app = FastAPI(title="HealthCore API")
 from telemetry import register_telemetry_routes
 from telemetry_report.router import register_telemetry_report_routes
 
-feature/business-performance-pipeline
 # --- Business Performance Pipeline integration ------------------------------
 # data/pipelines/pipeline.py lives outside services/api, so it isn't on
 # Python's import path by default. We add its containing folder here, once,
@@ -90,40 +71,9 @@ from pipeline import (  # noqa: E402 - must follow sys.path setup above
     get_monthly_clinic_supply_performance,
     trigger_pipeline_run,
 )
-
-logger = logging.getLogger(__name__)
-
- feature/background-processes
-# --- Business Performance Pipeline integration ------------------------------
-# data/pipelines/pipeline.py lives outside services/api, so it isn't on
-# Python's import path by default. We add its containing folder here, once,
-# at import time - this endpoint module only ever *calls* functions defined
-# in pipeline.py, it never re-implements ETL logic itself (per
-# PIPELINE_DESIGN.md section 9 / evaluation checklist: "endpoints duplicate
-# pipeline logic instead of importing from data/pipelines/" is a listed
-# common mistake to avoid).
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PIPELINES_DIR = REPO_ROOT / "data" / "pipelines"
-if str(PIPELINES_DIR) not in sys.path:
-    sys.path.insert(0, str(PIPELINES_DIR))
-
-from pipeline import (  # noqa: E402 - must follow sys.path setup above
-    get_latest_pipeline_run,
-    get_monthly_clinic_supply_performance,
-    trigger_pipeline_run,
-)
-
-
-app = FastAPI(title="HealthCore API")
- main
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="HealthCore API")
 
 register_telemetry_routes(app)
 register_telemetry_report_routes(app)
-main
- main
 
 app.add_middleware(
     CORSMiddleware,
@@ -133,6 +83,9 @@ app.add_middleware(
 )
 
 app.include_router(inventory_router)
+app.include_router(agent_router)
+app.include_router(knowledge_router)
+app.include_router(rfp_router)
 
 
 @app.on_event("startup")
@@ -141,6 +94,7 @@ def on_startup():
     # Supabase if they don't exist yet. Fine for learning; a real production
     # setup would use Alembic migrations instead.
     SQLModel.metadata.create_all(engine)
+    init_dlq_table()
 
 
 IncidentQuery = Query()
@@ -152,11 +106,6 @@ TASK_STATUS_MAP = {
     "SUCCESS": "success",
     "FAILURE": "failure",
 }
-
-
-@app.on_event("startup")
-def on_startup():
-    init_dlq_table()
 
 
 # --- Error handling (Incident Manager) ----------------------------------
@@ -338,6 +287,10 @@ def delete_supplier(supplier_id: int, current_user: dict = Depends(get_current_u
 
 
 # ---- Incidents (public, no auth per project spec) ----
+# SECURITY AUDIT NOTE (OWASP A01, accepted risk): these CRUD routes stay public because the
+# project spec defines them that way and the MCP server (mcps/company-tools) calls them
+# without a token. Plan: give the MCP server the service account it already uses for the
+# inventory API, then require get_current_user here.
 @app.post("/api/incidents", response_model=Incident, status_code=201)
 def create_incident(payload: IncidentCreate):
     now = datetime.now(timezone.utc)
@@ -376,7 +329,9 @@ def list_incidents(
 
 
 # ---- Incident summary report (async — see tasks.py) ----
-@app.post("/api/incidents/summary", status_code=202)
+# Protected (security audit, OWASP A01/A04): anonymous callers must not be able to enqueue
+# background work or read task results.
+@app.post("/api/incidents/summary", status_code=202, dependencies=[Depends(get_current_user)])
 def generate_incident_summary():
     """Enqueues the summary aggregation as a background task instead of
     computing it inline. Returns immediately with a task_id; poll
@@ -385,7 +340,7 @@ def generate_incident_summary():
     return JSONResponse(status_code=202, content={"task_id": task.id})
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", dependencies=[Depends(get_current_user)])
 def get_task_status(task_id: str):
     result = AsyncResult(task_id, app=celery_app)
     status = TASK_STATUS_MAP.get(result.status, "pending")
@@ -444,8 +399,10 @@ def update_incident_status(incident_id: int, payload: IncidentStatusUpdate):
 # These endpoints are a thin HTTP surface only - all ETL/aggregation logic
 # lives in data/pipelines/pipeline.py and is imported above, never
 # reimplemented here (PIPELINE_DESIGN.md section 9).
+# Protected (security audit, OWASP A01): anonymous callers must not read reporting data
+# or trigger the pipeline.
 
-@app.get("/reporting/pipeline-runs/latest")
+@app.get("/reporting/pipeline-runs/latest", dependencies=[Depends(get_current_user)])
 def get_latest_pipeline_run_route():
     run = get_latest_pipeline_run()
     if run is None:
@@ -453,12 +410,12 @@ def get_latest_pipeline_run_route():
     return run
 
 
-@app.post("/reporting/pipeline-runs", status_code=202)
+@app.post("/reporting/pipeline-runs", status_code=202, dependencies=[Depends(get_current_user)])
 def trigger_pipeline_run_route():
     return trigger_pipeline_run()
 
 
-@app.get("/reporting/monthly-clinic-supply-performance")
+@app.get("/reporting/monthly-clinic-supply-performance", dependencies=[Depends(get_current_user)])
 def get_monthly_clinic_supply_performance_route(
     month_start: Optional[str] = QueryParam(default=None),
 ):
@@ -468,7 +425,4 @@ def get_monthly_clinic_supply_performance_route(
             status_code=404,
             detail="No reporting data found for the requested month",
         )
- feature/background-processes
     return rows
-
- main

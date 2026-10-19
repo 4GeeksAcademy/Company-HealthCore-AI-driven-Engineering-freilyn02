@@ -27,15 +27,20 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # Inside the Compose network Qdrant is reachable by its service name.
+      - QDRANT_URL=http://qdrant:6333
     depends_on:
       - redis
+      - qdrant
     networks:
       - monorepo-dev
 
   redis:
     image: redis:7-alpine
+    # Bound to loopback: Redis has no password, so it must never be reachable from the
+    # network. Other containers reach it through the Compose network (redis:6379).
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     # noeviction: if Redis runs out of memory, it refuses new writes instead
     # of silently deleting queued messages. For a task queue, losing a
     # message is worse than a write failing loudly.
@@ -45,14 +50,28 @@ services:
 
   flower:
     image: mher/flower:2.0
+    # Bound to loopback: the Flower dashboard has no authentication configured.
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
       - redis
     networks:
       - monorepo-dev
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    # Bound to loopback: Qdrant has no API key configured.
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - monorepo-dev
+
+volumes:
+  qdrant_data:
 
 networks:
   monorepo-dev:
