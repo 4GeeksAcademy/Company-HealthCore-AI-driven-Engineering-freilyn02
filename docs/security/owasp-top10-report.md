@@ -1,0 +1,145 @@
+# OWASP Top 10 Audit and Remediation — HealthCore
+
+**Date:** 2026-10-19
+**Branch:** `feature/owasp-top10-audit`
+**Company context:** HealthCore (assigned `CONTEXT-company.md`, cybersecurity-analysis). Audit scope below follows the components of the monorepo and the VPS.
+
+## 1. Scope
+
+| Lane           | Components reviewed                                                                                                                          |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend        | `services/api` (`main.py`, `routers/`, `app/core/`, `users_repository.py`), `docker-compose.yml`                                             |
+| Frontend       | `uis/backoffice` (`lib/api.ts`, `lib/auth.ts`, `next.config.ts`, services, dependencies)                                                     |
+| Agentic system | `services/api/agent/` (tools, MCP client, harness guards), `services/api/routers/agent.py`, `mcps/company-tools/` (OAuth, scopes, audit log) |
+| Server         | The VPS used for operations (see `server-hardening.md`)                                                                                      |
+
+Not reviewed in depth in this pass: `uis/website` and `uis/website-m1` (public site), `data/pipelines` internals. They are listed as follow-up work.
+
+Method: manual code review of the files above, `pip-audit` and `npm audit` for components, and tests that prove each fix (before/after evidence in `docs/security/evidence/`).
+
+## 2. Summary of findings
+
+| ID   | Finding                                                                                                          | Lane              | OWASP    | Severity | Status                            |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | ----------------- | -------- | -------- | --------------------------------- |
+| F-01 | Root SSH login with password allowed, no non-root user                                                           | Server            | A05, A07 | Critical | **Fixed** (`server-hardening.md`) |
+| F-02 | Firewall inactive; dev servers and a debugger port published to the internet                                     | Server            | A05      | Critical | **Fixed** (`server-hardening.md`) |
+| F-03 | `/agent/*` and `/knowledge/query` answered anonymous requests (LLM, vector DB and MCP tool budget exposed)       | Agent, Backend    | A01, A04 | Critical | **Fixed** (fix 1)                 |
+| F-04 | Redis, Flower and Qdrant published on all interfaces without authentication                                      | Backend           | A05      | Critical | **Fixed** (fix 2)                 |
+| F-05 | Next.js 16.2.12 with a critical advisory set (RCE, SSRF, cache poisoning); 5 production vulnerabilities          | Frontend          | A06      | Critical | **Fixed** (fix 3)                 |
+| F-06 | `/reporting/*`, `/tasks/{id}`, `POST /api/incidents/summary` unauthenticated (anyone could trigger the pipeline) | Backend           | A01, A04 | High     | **Fixed** (fix 4)                 |
+| F-07 | `/api/incidents` CRUD is public                                                                                  | Backend, Agent    | A01      | High     | Accepted risk (see section 4)     |
+| F-08 | `/telemetry/report` has no authentication                                                                        | Backend           | A01      | Medium   | Open (see section 4)              |
+| F-09 | No rate limiting on `/auth/login` or any route                                                                   | Backend           | A04, A07 | Medium   | Open                              |
+| F-10 | Access token stored in `localStorage`                                                                            | Frontend          | A02, A07 | Medium   | Open                              |
+| F-11 | Python dependencies with advisories and no fixed version listed: `python-jose`, `ecdsa`, `nltk`                  | Backend           | A06      | Medium   | Open                              |
+| F-12 | OS updates pending (reboot required), disk at 95%                                                                | Server            | A06      | Medium   | Open                              |
+| F-13 | MCP auth reads claims with `verify_signature=False` as a fallback                                                | Agent             | A07      | Low      | Residual (see section 4)          |
+| F-14 | FastAPI docs and OpenAPI schema exposed by default; no security headers configured in Next.js                    | Backend, Frontend | A05      | Low      | Open                              |
+
+## 3. OWASP Top 10 evaluation by lane
+
+Each row states whether the category applies, the finding and the evidence.
+
+### A01 — Broken Access Control
+
+| Lane     | Applies       | Finding                                                                                                                                                                                                                                                                                                                                                        | Evidence                                                                                                                                                                                                                                    |
+| -------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend  | Yes           | Agent, knowledge, reporting, task and summary routes had no authentication (F-03, F-06). Fixed. User update/delete already enforce self-or-admin; role changes are admin-only; `UserCreate` does not accept `role` and new users are created as `user`. Incident CRUD and telemetry report remain unauthenticated (F-07, F-08).                                | `routers/agent.py`, `routers/knowledge.py`, `main.py`; `tests/security/test_agent_knowledge_auth.py`, `tests/security/test_reporting_tasks_auth.py`; `evidence/fix1-*.txt`, `evidence/fix4-*.txt`; `users_repository.py` (`"role": "user"`) |
+| Frontend | Yes (limited) | Route guard in `(authenticated)/layout.tsx` redirects when no token is stored. It is a usability control only; the API enforces access.                                                                                                                                                                                                                        | `uis/backoffice/app/(authenticated)/layout.tsx`, `lib/api.ts` (401 clears token and redirects)                                                                                                                                              |
+| Agent    | Yes           | Before the fix anyone could call the agent and reach MCP tools through it. Now the whole `/agent` router requires a JWT. The MCP server requires OAuth on every request and one scope per tool action (`incidents:read`, `incidents:write`, `inventory:read`). The agent only uses read operations (`get_status`, `list_incident_tickets`, `query_inventory`). | `routers/agent.py`, `mcps/company-tools/auth.py` (`require_scope`), `agent/tools.py` docstring; `evidence/fix1-*.txt`                                                                                                                       |
+
+### A02 — Cryptographic Failures
+
+| Lane     | Applies | Finding                                                                                                                                                                                                                                                                                               | Evidence                                                                                                                           |
+| -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Backend  | Yes     | Passwords hashed with bcrypt (passlib). `SECRET_KEY` has no default and the app refuses to start without it. JWT algorithm is pinned on decode. `.env` files are git-ignored; only `.env.example` files with empty or placeholder values are versioned; no `.db`, `.pem` or `.key` files are tracked. | `app/core/security.py`; `.gitignore` (`.env`, `*.env`, `!.env.example`); `git ls-files` check for `.db/.pem/.key` returned nothing |
+| Frontend | Yes     | The access token is kept in `localStorage`, readable by any script running in the page (F-10). No `dangerouslySetInnerHTML`, `innerHTML` or `eval` found, which limits the XSS risk that would expose it.                                                                                             | `lib/auth.ts`; grep for `dangerouslySetInnerHTML\|innerHTML\|eval(` in `uis/` returned nothing                                     |
+| Agent    | Yes     | MCP client credentials and tokens come from environment variables, with an explicit timeout on token fetch. The MCP server refuses to start without an OIDC issuer. Ticket descriptions are never returned to the agent.                                                                              | `agent/mcp_client.py`, `mcps/company-tools/auth.py`, `agent/tools.py`                                                              |
+
+### A03 — Injection
+
+| Lane     | Applies | Finding                                                                                                                                                                                                                                                            | Evidence                                                                   |
+| -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Backend  | Yes     | Inputs are validated with Pydantic models (question length capped at 500 characters). Data access in the reviewed modules uses TinyDB query objects and SQLModel rather than string-built SQL. Repo-wide search results are stored for review.                     | `routers/knowledge.py`, `main.py`; `evidence/static-checks.txt`            |
+| Frontend | Yes     | No raw HTML injection sinks found in `uis/`.                                                                                                                                                                                                                       | grep result noted under A02                                                |
+| Agent    | Yes     | Prompt injection is the main risk. The harness normalizes input (zero-width and leetspeak), detects override phrases in English and Spanish, wraps retrieved content as untrusted and strips role markers, and checks output for system-prompt leaks and PHI keys. | `agent/harness/input_guards.py`, `external_content.py`, `output_guards.py` |
+
+### A04 — Insecure Design
+
+| Lane     | Applies | Finding                                                                                                                                                                                                                                     | Evidence                                                                      |
+| -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Backend  | Yes     | Several expensive or sensitive operations were reachable without identity (fixed, F-03, F-06). No rate limiting anywhere (F-09).                                                                                                            | `grep -rln "slowapi\|Limiter\|rate_limit" services/api mcps` returned nothing |
+| Frontend | Yes     | Business rules (incident status transitions) are enforced by the API, not the UI.                                                                                                                                                           | `main.py` (`VALID_STATUS_TRANSITIONS`)                                        |
+| Agent    | Yes     | The design separates read-only tools from write capabilities, applies input and output guardrails, and keeps the agent from calling upstream APIs directly (everything goes through the MCP server). Gap: no per-user quota on agent calls. | `agent/tools.py`, `agent/harness/`, `mcps/company-tools/`                     |
+
+### A05 — Security Misconfiguration
+
+| Lane     | Applies | Finding                                                                                                                                                                                                                                                                                                                      | Evidence                                                                               |
+| -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Backend  | Yes     | Redis, Flower and Qdrant were published on all interfaces without authentication (F-04, fixed: bound to `127.0.0.1`). CORS is limited to `http://localhost:3000` (methods and headers are wildcards). The generic error handler returns `Internal server error` without details. FastAPI docs are exposed by default (F-14). | `docker-compose.yml`; `evidence/fix2-before.txt`, `evidence/fix2-after.txt`; `main.py` |
+| Frontend | Yes     | `next.config.ts` has no security headers (CSP, `X-Frame-Options`, etc.) (F-14).                                                                                                                                                                                                                                              | `uis/backoffice/next.config.ts`                                                        |
+| Agent    | Yes     | The MCP server binds to `0.0.0.0` by default (`MCP_HOST`) but rejects any request without a valid OAuth token. Scope enforcement is on by default (`MCP_ENFORCE_SCOPES=true`) and there is no "run without auth" mode.                                                                                                       | `mcps/company-tools/.env.example`, `auth.py`                                           |
+| Server   | Yes     | Root SSH, password login, inactive firewall, exposed dev servers and debugger port (F-01, F-02). Fixed.                                                                                                                                                                                                                      | `server-hardening.md`                                                                  |
+
+### A06 — Vulnerable and Outdated Components
+
+| Lane     | Applies | Finding                                                                                                                                                                  | Evidence                                                       |
+| -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Backend  | Yes     | `pip-audit` reports 4 advisories in 3 packages (`ecdsa`, `nltk`, `python-jose`) and lists no fixed versions (F-11).                                                      | `pip-audit` output on the `uv export` of `services/api`        |
+| Frontend | Yes     | `npm audit --omit=dev`: 5 vulnerabilities (1 critical) before; **0 after** upgrading Next.js to 16.4.2 and running `npm audit fix`. The production build still compiles. | `evidence/fix3-before.txt`, `fix3-after.txt`, `fix3-build.txt` |
+| Agent    | Yes     | Shares the Python dependency set with the backend (F-11).                                                                                                                | same as backend                                                |
+| Server   | Yes     | Pending OS updates and reboot; disk at 95% (F-12).                                                                                                                       | login banner, `df -h /`                                        |
+
+### A07 — Identification and Authentication Failures
+
+| Lane     | Applies | Finding                                                                                                                                                                                                                            | Evidence                                          |
+| -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Backend  | Yes     | JWTs expire (30 minutes by default); bcrypt verification; generic login error message. No brute-force protection or lockout (F-09).                                                                                                | `app/core/security.py`, `main.py` (`/auth/login`) |
+| Frontend | Yes     | `apiFetch` clears the token and redirects to `/login` on any 401. Token in `localStorage` (F-10).                                                                                                                                  | `lib/api.ts`, `lib/auth.ts`                       |
+| Agent    | Yes     | MCP uses OAuth 2.1/OIDC as a resource server (signature, issuer, audience validated on every request). Fallback reads claims with `verify_signature=False` only after the middleware has verified the same token (F-13, residual). | `mcps/company-tools/auth.py`                      |
+| Server   | Yes     | Password and root login replaced by key-only login for a dedicated user.                                                                                                                                                           | `server-hardening.md`                             |
+
+### A08 — Software and Data Integrity Failures
+
+| Lane     | Applies | Finding                                                                                                                                                                               | Evidence                                             |
+| -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Backend  | Yes     | No unsigned update mechanism observed. Deserialization and command-execution search results are stored for review. Dependencies are pinned through `uv.lock` and `package-lock.json`. | `evidence/static-checks.txt`, `services/api/uv.lock` |
+| Frontend | Yes     | Lockfile committed; no third-party scripts reviewed beyond npm dependencies.                                                                                                          | `package-lock.json`                                  |
+| Agent    | Yes     | External (retrieved) content is sanitized and wrapped before reaching the model.                                                                                                      | `agent/harness/external_content.py`                  |
+
+### A09 — Security Logging and Monitoring Failures
+
+| Lane     | Applies | Finding                                                                                                                                                                                                               | Evidence                                                                                |
+| -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Backend  | Yes     | Unhandled errors are logged server-side with method and path. The knowledge endpoint deliberately does not log the question (patients may type personal data). Failed logins and 401/403 events are not logged (gap). | `main.py`, `routers/knowledge.py`                                                       |
+| Frontend | Yes     | Technical telemetry (API latency, status codes) is captured through `apiFetch`.                                                                                                                                       | `lib/api.ts`                                                                            |
+| Agent    | Yes     | The MCP server writes exactly one structured JSON log line per tool call without sensitive input text. The guardrail layer counts how many times each guard fires (`/agent/guardrails/summary`, now authenticated).   | `mcps/company-tools/audit_log.py`, `agent/harness/observability.py`, `routers/agent.py` |
+
+### A10 — Server-Side Request Forgery
+
+| Lane     | Applies | Finding                                                                                                                                                                                                          | Evidence                                                                   |
+| -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Backend  | Limited | Reviewed routes do not fetch user-supplied URLs. Outbound calls go to configured service URLs. Outbound-call search results are stored for review.                                                               | `evidence/static-checks.txt`                                               |
+| Frontend | Limited | Next.js image optimization had SSRF advisories; resolved by the upgrade (F-05).                                                                                                                                  | `evidence/fix3-*.txt`                                                      |
+| Agent    | Limited | The agent does not accept URLs from users; its tools take a ticket id, a status filter or a product query. MCP upstream base URLs and the token URL come from environment configuration, not from request input. | `agent/tools.py`, `agent/mcp_client.py`, `mcps/company-tools/.env.example` |
+
+## 4. Accepted and open risks
+
+- **F-07 Public incident CRUD (accepted).** The project spec defines these routes as public, and the MCP server calls them without a token, so protecting them now would break the agent's ticket tools and the MCP tests. Plan: give the MCP server the service account it already uses for inventory (`AGENT_SERVICE_EMAIL/PASSWORD`), then require `get_current_user` on `/api/incidents`. A code comment in `main.py` records this.
+- **F-08 `/telemetry/report`.** Event ingestion is probably public on purpose (the frontend sends events before login), but the report endpoint should require authentication. It was not changed to avoid breaking event capture without testing.
+- **F-09 Rate limiting.** Plan: add a limiter on `/auth/login` and the LLM-backed routes.
+- **F-10 Token storage.** Plan: move to an HttpOnly, SameSite cookie issued by the API.
+- **F-11 and F-12.** Plan: replace or upgrade `python-jose` (for example with PyJWT), free disk space, apply OS updates and reboot.
+- **F-13 Residual.** The fallback in `auth.py` only runs after the bearer middleware validated the token, so it cannot be reached with an unverified token. It should still be replaced by reading the verified `auth_info`.
+
+## 5. Remediations with reproducible evidence
+
+| #   | Fix                                                      | Before                                                                                     | After                                                                                                         | Reproduce                                                                                             |
+| --- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 1   | Require JWT on `/agent/*` and `/knowledge/query`         | `evidence/fix1-before.txt` — 6 failed, 3 passed (anonymous and forged-token calls got 200) | `evidence/fix1-after.txt` — 9 passed                                                                          | `cd services/api && uv run --with pytest pytest ../../tests/security/test_agent_knowledge_auth.py -v` |
+| 2   | Bind Redis, Flower, Qdrant to loopback                   | `evidence/fix2-before.txt` — `"6379:6379"`, `"5555:5555"`, `"6333:6333"`                   | `evidence/fix2-after.txt` — `"127.0.0.1:6379:6379"`, `"127.0.0.1:5555:5555"`, `"127.0.0.1:6333:6333"`         | `grep -nE '^\s+- "([0-9.]+:)?[0-9]+:[0-9]+"' docker-compose.yml`                                      |
+| 3   | Upgrade Next.js to 16.4.2                                | `evidence/fix3-before.txt` — 5 vulnerabilities (1 critical)                                | `evidence/fix3-after.txt` — 0 vulnerabilities; `evidence/fix3-build.txt` — production build compiles 16 pages | `cd uis/backoffice && npm audit --omit=dev && npm run build`                                          |
+| 4   | Require JWT on reporting, task status and summary routes | `evidence/fix4-before.txt` — 10 failed, 5 passed                                           | `evidence/fix4-after.txt` — 15 passed                                                                         | `cd services/api && uv run --with pytest pytest ../../tests/security/test_reporting_tasks_auth.py -v` |
+| 5   | Server hardening (SSH, non-root user, firewall)          | `server-hardening.md` section 1                                                            | `server-hardening.md` section 4                                                                               | commands in `server-hardening.md` section 4                                                           |
+
+Legitimate flows still work: the backoffice sends the token on every call through `apiFetch`, the full test suite passes (384 passed, 1 skipped), and the authenticated case is tested for every protected route.
