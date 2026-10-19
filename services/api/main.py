@@ -287,6 +287,10 @@ def delete_supplier(supplier_id: int, current_user: dict = Depends(get_current_u
 
 
 # ---- Incidents (public, no auth per project spec) ----
+# SECURITY AUDIT NOTE (OWASP A01, accepted risk): these CRUD routes stay public because the
+# project spec defines them that way and the MCP server (mcps/company-tools) calls them
+# without a token. Plan: give the MCP server the service account it already uses for the
+# inventory API, then require get_current_user here.
 @app.post("/api/incidents", response_model=Incident, status_code=201)
 def create_incident(payload: IncidentCreate):
     now = datetime.now(timezone.utc)
@@ -325,7 +329,9 @@ def list_incidents(
 
 
 # ---- Incident summary report (async — see tasks.py) ----
-@app.post("/api/incidents/summary", status_code=202)
+# Protected (security audit, OWASP A01/A04): anonymous callers must not be able to enqueue
+# background work or read task results.
+@app.post("/api/incidents/summary", status_code=202, dependencies=[Depends(get_current_user)])
 def generate_incident_summary():
     """Enqueues the summary aggregation as a background task instead of
     computing it inline. Returns immediately with a task_id; poll
@@ -334,7 +340,7 @@ def generate_incident_summary():
     return JSONResponse(status_code=202, content={"task_id": task.id})
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", dependencies=[Depends(get_current_user)])
 def get_task_status(task_id: str):
     result = AsyncResult(task_id, app=celery_app)
     status = TASK_STATUS_MAP.get(result.status, "pending")
@@ -393,8 +399,10 @@ def update_incident_status(incident_id: int, payload: IncidentStatusUpdate):
 # These endpoints are a thin HTTP surface only - all ETL/aggregation logic
 # lives in data/pipelines/pipeline.py and is imported above, never
 # reimplemented here (PIPELINE_DESIGN.md section 9).
+# Protected (security audit, OWASP A01): anonymous callers must not read reporting data
+# or trigger the pipeline.
 
-@app.get("/reporting/pipeline-runs/latest")
+@app.get("/reporting/pipeline-runs/latest", dependencies=[Depends(get_current_user)])
 def get_latest_pipeline_run_route():
     run = get_latest_pipeline_run()
     if run is None:
@@ -402,12 +410,12 @@ def get_latest_pipeline_run_route():
     return run
 
 
-@app.post("/reporting/pipeline-runs", status_code=202)
+@app.post("/reporting/pipeline-runs", status_code=202, dependencies=[Depends(get_current_user)])
 def trigger_pipeline_run_route():
     return trigger_pipeline_run()
 
 
-@app.get("/reporting/monthly-clinic-supply-performance")
+@app.get("/reporting/monthly-clinic-supply-performance", dependencies=[Depends(get_current_user)])
 def get_monthly_clinic_supply_performance_route(
     month_start: Optional[str] = QueryParam(default=None),
 ):

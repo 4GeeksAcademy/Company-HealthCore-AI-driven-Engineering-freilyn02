@@ -1,0 +1,49 @@
+warning: `VIRTUAL_ENV=/workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+============================= test session starts ==============================
+platform linux -- Python 3.12.1, pytest-9.1.1, pluggy-1.6.0 -- /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02
+plugins: langsmith-0.14.6, anyio-4.15.1, platformdirs-4.13.0
+collecting ... collected 15 items
+
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/pipeline-runs/latest] PASSED [  6%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/reporting/pipeline-runs] PASSED [ 13%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/monthly-clinic-supply-performance] PASSED [ 20%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/api/incidents/summary] PASSED [ 26%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/tasks/some-task-id] PASSED [ 33%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/pipeline-runs/latest] PASSED [ 40%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/reporting/pipeline-runs] PASSED [ 46%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/monthly-clinic-supply-performance] PASSED [ 53%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/api/incidents/summary] PASSED [ 60%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/tasks/some-task-id] PASSED [ 66%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/reporting/pipeline-runs/latest] PASSED [ 73%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[POST-/reporting/pipeline-runs] PASSED [ 80%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/reporting/monthly-clinic-supply-performance] PASSED [ 86%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[POST-/api/incidents/summary] PASSED [ 93%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/tasks/some-task-id] PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+main.py:91
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/main.py:91: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.12/site-packages/fastapi/applications.py:4745
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 15 passed, 3 warnings in 12.44s ========================

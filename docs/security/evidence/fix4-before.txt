@@ -1,0 +1,201 @@
+warning: `VIRTUAL_ENV=/workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+============================= test session starts ==============================
+platform linux -- Python 3.12.1, pytest-9.1.1, pluggy-1.6.0 -- /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02
+plugins: langsmith-0.14.6, anyio-4.15.1, platformdirs-4.13.0
+collecting ... collected 15 items
+
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/pipeline-runs/latest] FAILED [  6%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/reporting/pipeline-runs] FAILED [ 13%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/monthly-clinic-supply-performance] FAILED [ 20%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/api/incidents/summary] FAILED [ 26%]
+../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/tasks/some-task-id] FAILED [ 33%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/pipeline-runs/latest] FAILED [ 40%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/reporting/pipeline-runs] FAILED [ 46%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/monthly-clinic-supply-performance] FAILED [ 53%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/api/incidents/summary] FAILED [ 60%]
+../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/tasks/some-task-id] FAILED [ 66%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/reporting/pipeline-runs/latest] PASSED [ 73%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[POST-/reporting/pipeline-runs] PASSED [ 80%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/reporting/monthly-clinic-supply-performance] PASSED [ 86%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[POST-/api/incidents/summary] PASSED [ 93%]
+../../tests/security/test_reporting_tasks_auth.py::test_authenticated_user_still_works[GET-/tasks/some-task-id] PASSED [100%]
+
+=================================== FAILURES ===================================
+___ test_anonymous_request_is_rejected[GET-/reporting/pipeline-runs/latest] ____
+
+client = <starlette.testclient.TestClient object at 0x79cb2857cd40>
+method = 'GET', path = '/reporting/pipeline-runs/latest'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_anonymous_request_is_rejected(client, method, path):
+        response = client.request(method, path)
+>       assert response.status_code == 401, f"{method} {path} answered an anonymous request"
+E       AssertionError: GET /reporting/pipeline-runs/latest answered an anonymous request
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:69: AssertionError
+______ test_anonymous_request_is_rejected[POST-/reporting/pipeline-runs] _______
+
+client = <starlette.testclient.TestClient object at 0x79cb2856fb60>
+method = 'POST', path = '/reporting/pipeline-runs'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_anonymous_request_is_rejected(client, method, path):
+        response = client.request(method, path)
+>       assert response.status_code == 401, f"{method} {path} answered an anonymous request"
+E       AssertionError: POST /reporting/pipeline-runs answered an anonymous request
+E       assert 202 == 401
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:69: AssertionError
+_ test_anonymous_request_is_rejected[GET-/reporting/monthly-clinic-supply-performance] _
+
+client = <starlette.testclient.TestClient object at 0x79cb2857d340>
+method = 'GET', path = '/reporting/monthly-clinic-supply-performance'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_anonymous_request_is_rejected(client, method, path):
+        response = client.request(method, path)
+>       assert response.status_code == 401, f"{method} {path} answered an anonymous request"
+E       AssertionError: GET /reporting/monthly-clinic-supply-performance answered an anonymous request
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:69: AssertionError
+_______ test_anonymous_request_is_rejected[POST-/api/incidents/summary] ________
+
+client = <starlette.testclient.TestClient object at 0x79cb28437710>
+method = 'POST', path = '/api/incidents/summary'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_anonymous_request_is_rejected(client, method, path):
+        response = client.request(method, path)
+>       assert response.status_code == 401, f"{method} {path} answered an anonymous request"
+E       AssertionError: POST /api/incidents/summary answered an anonymous request
+E       assert 202 == 401
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:69: AssertionError
+_________ test_anonymous_request_is_rejected[GET-/tasks/some-task-id] __________
+
+client = <starlette.testclient.TestClient object at 0x79cb28436d50>
+method = 'GET', path = '/tasks/some-task-id'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_anonymous_request_is_rejected(client, method, path):
+        response = client.request(method, path)
+>       assert response.status_code == 401, f"{method} {path} answered an anonymous request"
+E       AssertionError: GET /tasks/some-task-id answered an anonymous request
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:69: AssertionError
+_____ test_invalid_token_is_rejected[GET-/reporting/pipeline-runs/latest] ______
+
+client = <starlette.testclient.TestClient object at 0x79cb272f18e0>
+method = 'GET', path = '/reporting/pipeline-runs/latest'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_invalid_token_is_rejected(client, method, path):
+        response = client.request(method, path, headers={"Authorization": "Bearer not-a-real-token"})
+>       assert response.status_code == 401, f"{method} {path} accepted a forged token"
+E       AssertionError: GET /reporting/pipeline-runs/latest accepted a forged token
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:75: AssertionError
+________ test_invalid_token_is_rejected[POST-/reporting/pipeline-runs] _________
+
+client = <starlette.testclient.TestClient object at 0x79cb272f2960>
+method = 'POST', path = '/reporting/pipeline-runs'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_invalid_token_is_rejected(client, method, path):
+        response = client.request(method, path, headers={"Authorization": "Bearer not-a-real-token"})
+>       assert response.status_code == 401, f"{method} {path} accepted a forged token"
+E       AssertionError: POST /reporting/pipeline-runs accepted a forged token
+E       assert 202 == 401
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:75: AssertionError
+_ test_invalid_token_is_rejected[GET-/reporting/monthly-clinic-supply-performance] _
+
+client = <starlette.testclient.TestClient object at 0x79cb272f3ef0>
+method = 'GET', path = '/reporting/monthly-clinic-supply-performance'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_invalid_token_is_rejected(client, method, path):
+        response = client.request(method, path, headers={"Authorization": "Bearer not-a-real-token"})
+>       assert response.status_code == 401, f"{method} {path} accepted a forged token"
+E       AssertionError: GET /reporting/monthly-clinic-supply-performance accepted a forged token
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:75: AssertionError
+_________ test_invalid_token_is_rejected[POST-/api/incidents/summary] __________
+
+client = <starlette.testclient.TestClient object at 0x79cb272f3980>
+method = 'POST', path = '/api/incidents/summary'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_invalid_token_is_rejected(client, method, path):
+        response = client.request(method, path, headers={"Authorization": "Bearer not-a-real-token"})
+>       assert response.status_code == 401, f"{method} {path} accepted a forged token"
+E       AssertionError: POST /api/incidents/summary accepted a forged token
+E       assert 202 == 401
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:75: AssertionError
+___________ test_invalid_token_is_rejected[GET-/tasks/some-task-id] ____________
+
+client = <starlette.testclient.TestClient object at 0x79cb2731a120>
+method = 'GET', path = '/tasks/some-task-id'
+
+    @pytest.mark.parametrize("method,path", PROTECTED_ROUTES)
+    def test_invalid_token_is_rejected(client, method, path):
+        response = client.request(method, path, headers={"Authorization": "Bearer not-a-real-token"})
+>       assert response.status_code == 401, f"{method} {path} accepted a forged token"
+E       AssertionError: GET /tasks/some-task-id accepted a forged token
+E       assert 200 == 401
+E        +  where 200 = <Response [200 OK]>.status_code
+
+../../tests/security/test_reporting_tasks_auth.py:75: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+main.py:91
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/main.py:91: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv/lib/python3.12/site-packages/fastapi/applications.py:4745
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/lib/python3.12/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/pipeline-runs/latest]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/reporting/pipeline-runs]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/reporting/monthly-clinic-supply-performance]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[POST-/api/incidents/summary]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_anonymous_request_is_rejected[GET-/tasks/some-task-id]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/pipeline-runs/latest]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/reporting/pipeline-runs]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/reporting/monthly-clinic-supply-performance]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[POST-/api/incidents/summary]
+FAILED ../../tests/security/test_reporting_tasks_auth.py::test_invalid_token_is_rejected[GET-/tasks/some-task-id]
+=================== 10 failed, 5 passed, 3 warnings in 8.03s ===================
