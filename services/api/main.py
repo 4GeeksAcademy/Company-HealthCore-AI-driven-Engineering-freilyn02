@@ -22,6 +22,7 @@ from app.core.security import create_access_token, verify_password
 from celery_app import celery_app
 from database import engine, incidents_table
 from dlq_models import init_dlq_table
+from events.sse import router as events_router
 from routers.inventory import router as inventory_router
 from routers.knowledge import router as knowledge_router
 from routers.rfp import router as rfp_router
@@ -86,6 +87,7 @@ app.include_router(inventory_router)
 app.include_router(agent_router)
 app.include_router(knowledge_router)
 app.include_router(rfp_router)
+app.include_router(events_router)
 
 
 @app.on_event("startup")

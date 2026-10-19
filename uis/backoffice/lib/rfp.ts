@@ -13,6 +13,7 @@ import type {
   RfpApproverIdentity,
   RfpDecisionInput,
   RfpTicket,
+  RfpTicketCreatedEvent,
   RfpTraceEvent,
   RfpUploadResponse,
 } from "@/types/rfp";
@@ -21,6 +22,68 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export function listRfpTickets(): Promise<RfpTicket[]> {
   return apiFetch<RfpTicket[]>("/rfp/tickets");
+}
+
+// --- Real-time (SSE) -----------------------------------------------------------
+
+export const RFP_EVENTS_PATH = "/events/stream";
+export const RFP_TICKET_CREATED_EVENT = "rfp_ticket_created";
+
+// Validates the untrusted JSON of an SSE frame. Returns null for anything that is not a usable event.
+export function parseRfpTicketCreated(data: unknown): RfpTicketCreatedEvent | null {
+  if (!data || typeof data !== "object") return null;
+  const event = data as Partial<RfpTicketCreatedEvent>;
+  if (
+    typeof event.id !== "number" ||
+    typeof event.status !== "string" ||
+    typeof event.original_filename !== "string" ||
+    typeof event.created_at !== "string"
+  ) {
+    return null;
+  }
+  return event as RfpTicketCreatedEvent;
+}
+
+// The event only carries part of a ticket. The row is completed with the neutral values a
+// brand-new ticket has; the next normal refresh of the list replaces it with the full record.
+export function ticketFromCreatedEvent(event: RfpTicketCreatedEvent): RfpTicket {
+  return {
+    id: event.id,
+    status: event.status,
+    original_filename: event.original_filename,
+    is_rfp: null,
+    classifier_confidence: null,
+    classifier_reason: null,
+    contains_phi: false,
+    phi_findings: null,
+    summary: null,
+    synthesis: null,
+    routing_status: "pending",
+    error_message: null,
+    rfp_metadata: null,
+    readability: null,
+    created_at: event.created_at,
+    updated_at: event.created_at,
+  };
+}
+
+// Merges ticket lists by `id`, so the same ticket never appears twice. `incoming` wins over
+// `current` for the same id when `preferIncoming` is true (a server refetch is authoritative);
+// otherwise the record already shown is kept (an event must not overwrite a full record with
+// its partial copy). Result is newest first, like GET /rfp/tickets.
+export function mergeRfpTickets(
+  current: RfpTicket[],
+  incoming: RfpTicket[],
+  { preferIncoming }: { preferIncoming: boolean },
+): RfpTicket[] {
+  const byId = new Map<number, RfpTicket>();
+  for (const ticket of current) byId.set(ticket.id, ticket);
+  for (const ticket of incoming) {
+    if (preferIncoming || !byId.has(ticket.id)) byId.set(ticket.id, ticket);
+  }
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime() || b.id - a.id,
+  );
 }
 
 export function getRfpTicket(ticketId: number): Promise<RfpTicket> {

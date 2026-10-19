@@ -67,6 +67,17 @@ export interface RfpUploadResponse {
   status: RfpStatus;
 }
 
+// --- Real-time: GET /events/stream, event "rfp_ticket_created" ---------------
+
+// Payload published by the API right after a ticket is saved. A subset of RfpTicket,
+// with the same field names (`id` is the ticket identifier).
+export interface RfpTicketCreatedEvent {
+  id: number;
+  status: RfpStatus;
+  original_filename: string;
+  created_at: string;
+}
+
 // --- Part 3: approval and completion ----------------------------------------
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "changes_requested";

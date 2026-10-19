@@ -35,10 +35,13 @@ export default function RfpTicketTable({
   tickets,
   selectedId,
   onSelect,
+  highlightedIds,
 }: {
   tickets: RfpTicket[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  // Tickets that arrived in real time and have not been opened yet.
+  highlightedIds?: ReadonlySet<number>;
 }) {
   if (tickets.length === 0) {
     return <p className="text-sm text-gray-500">No RFPs uploaded yet.</p>;
@@ -56,31 +59,46 @@ export default function RfpTicketTable({
         </tr>
       </thead>
       <tbody>
-        {tickets.map((ticket) => (
-          <tr
-            key={ticket.id}
-            onClick={() => onSelect(ticket.id)}
-            className={`cursor-pointer border-b border-gray-200 hover:bg-gray-100 hover:text-gray-900 ${
-              ticket.id === selectedId ? "bg-blue-50 text-gray-900" : ""
-            }`}
-          >
-            <td className="py-2">{ticket.id}</td>
-            <td>{ticket.original_filename}</td>
-            <td>
-              <StatusBadge status={ticket.status} />
-            </td>
-            <td>
-              {ticket.contains_phi ? (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                  PHI review
-                </span>
-              ) : (
-                <span className="text-xs text-gray-500">-</span>
-              )}
-            </td>
-            <td>{new Date(ticket.created_at).toLocaleString()}</td>
-          </tr>
-        ))}
+        {tickets.map((ticket) => {
+          const isNew = highlightedIds?.has(ticket.id) ?? false;
+          return (
+            <tr
+              key={ticket.id}
+              onClick={() => onSelect(ticket.id)}
+              data-new={isNew || undefined}
+              className={`cursor-pointer border-b border-gray-200 hover:bg-gray-100 hover:text-gray-900 ${
+                ticket.id === selectedId
+                  ? "bg-blue-50 text-gray-900"
+                  : isNew
+                    ? "bg-orange-50 font-semibold text-gray-900 shadow-[inset_4px_0_0_#f97316]"
+                    : ""
+              }`}
+            >
+              <td className="py-2">
+                {ticket.id}
+                {isNew && (
+                  <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-[0.65rem] font-extrabold uppercase tracking-wider text-white">
+                    New
+                  </span>
+                )}
+              </td>
+              <td>{ticket.original_filename}</td>
+              <td>
+                <StatusBadge status={ticket.status} />
+              </td>
+              <td>
+                {ticket.contains_phi ? (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                    PHI review
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-500">-</span>
+                )}
+              </td>
+              <td>{new Date(ticket.created_at).toLocaleString()}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

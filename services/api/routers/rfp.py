@@ -49,10 +49,22 @@ from data.pipelines.rfp_response.service import (  # noqa: E402
     start_generation,
 )
 from database import engine, get_db  # noqa: E402
+from events.bus import event_bus  # noqa: E402
 
 router = APIRouter(prefix="/rfp", tags=["rfp"])
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+RFP_TICKET_CREATED_EVENT = "rfp_ticket_created"
+
+
+def _ticket_created_payload(ticket: RfpTicket) -> dict:
+    """SSE payload for a new ticket: the ticket's own field names, no PDF path or PHI data."""
+    return {
+        "id": ticket.id,
+        "status": ticket.status,
+        "original_filename": ticket.original_filename,
+        "created_at": ticket.created_at.isoformat(),
+    }
 
 
 def _safe_name(filename: str) -> str:
@@ -83,6 +95,7 @@ async def upload_rfp(
     pdf_path.write_bytes(content)
 
     ticket = create_ticket(session, filename=original, pdf_path=str(pdf_path), user_id=current_user["id"])
+    event_bus.publish(RFP_TICKET_CREATED_EVENT, _ticket_created_payload(ticket))
     background_tasks.add_task(run_ticket, ticket.id, engine)
     return JSONResponse(status_code=202, content={"ticket_id": ticket.id, "status": ticket.status})
 
