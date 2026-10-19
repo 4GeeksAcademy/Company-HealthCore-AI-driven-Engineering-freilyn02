@@ -4,6 +4,9 @@
 
 All retrieval and generation logic lives in data/pipelines/rag.py; this module is only
 the HTTP surface (validation, error mapping and the response shape).
+
+The router requires a valid JWT: anonymous callers must not be able to spend LLM and
+vector-database budget (OWASP A01 - fixed in the security audit).
 """
 
 from __future__ import annotations
@@ -13,9 +16,11 @@ import sys
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
+
+from app.core.deps import get_current_user
 
 # data/ lives at the repository root, outside services/api, so it is not importable by
 # default. The root is appended (not inserted first) so it can never shadow this service's
@@ -28,7 +33,11 @@ from data.pipelines.rag import query as rag_query  # noqa: E402 - needs the path
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+router = APIRouter(
+    prefix="/knowledge",
+    tags=["knowledge"],
+    dependencies=[Depends(get_current_user)],
+)
 
 MAX_QUESTION_CHARS = 500
 

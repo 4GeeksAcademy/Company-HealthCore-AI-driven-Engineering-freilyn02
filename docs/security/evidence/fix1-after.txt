@@ -1,0 +1,25 @@
+warning: `VIRTUAL_ENV=/workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+============================= test session starts ==============================
+platform linux -- Python 3.12.1, pytest-9.1.1, pluggy-1.6.0 -- /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02
+plugins: langsmith-0.14.6, anyio-4.15.1, platformdirs-4.13.0
+collecting ... collected 9 items
+
+../../tests/security/test_agent_knowledge_auth.py::test_anonymous_request_is_rejected[POST-/agent/query-body0] PASSED [ 11%]
+../../tests/security/test_agent_knowledge_auth.py::test_anonymous_request_is_rejected[POST-/knowledge/query-body1] PASSED [ 22%]
+../../tests/security/test_agent_knowledge_auth.py::test_anonymous_request_is_rejected[GET-/agent/guardrails/summary-None] PASSED [ 33%]
+../../tests/security/test_agent_knowledge_auth.py::test_invalid_token_is_rejected[POST-/agent/query-body0] PASSED [ 44%]
+../../tests/security/test_agent_knowledge_auth.py::test_invalid_token_is_rejected[POST-/knowledge/query-body1] PASSED [ 55%]
+../../tests/security/test_agent_knowledge_auth.py::test_invalid_token_is_rejected[GET-/agent/guardrails/summary-None] PASSED [ 66%]
+../../tests/security/test_agent_knowledge_auth.py::test_authenticated_user_still_works[POST-/agent/query-body0] PASSED [ 77%]
+../../tests/security/test_agent_knowledge_auth.py::test_authenticated_user_still_works[POST-/knowledge/query-body1] PASSED [ 88%]
+../../tests/security/test_agent_knowledge_auth.py::test_authenticated_user_still_works[GET-/agent/guardrails/summary-None] PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854
+  /workspaces/Company-HealthCore-AI-driven-Engineering-freilyn02/services/api/.venv/lib/python3.12/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 9 passed, 1 warning in 2.32s =========================

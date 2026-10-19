@@ -1,10 +1,17 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from agent.graph import run_agent
 from agent.harness import observability
+from app.core.deps import get_current_user
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+# Every route here spends LLM / MCP-tool budget or exposes operational data, so the whole
+# router requires a valid JWT (OWASP A01 - fixed in the security audit).
+router = APIRouter(
+    prefix="/agent",
+    tags=["agent"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class AgentQuery(BaseModel):

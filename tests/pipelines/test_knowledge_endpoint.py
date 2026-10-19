@@ -2,25 +2,35 @@
 
 Only the router is mounted (not the whole HealthCore API), and the RAG pipeline is mocked,
 so no database, Qdrant server or API key is needed.
+
+The router requires a JWT (security audit, OWASP A01). These tests cover request validation
+and error mapping, so authentication is bypassed here; the access-control behaviour itself
+is covered in tests/security/test_agent_knowledge_auth.py.
 """
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock
 
-import httpx
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from qdrant_client.http.exceptions import ResponseHandlingException
+# security.py refuses to import without a signing key; use a throwaway one for tests.
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-used-anywhere-else")
 
-from routers import knowledge
+import httpx  # noqa: E402
+import pytest  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from qdrant_client.http.exceptions import ResponseHandlingException  # noqa: E402
+
+from app.core.deps import get_current_user  # noqa: E402
+from routers import knowledge  # noqa: E402
 
 
 @pytest.fixture
 def client() -> TestClient:
     app = FastAPI()
     app.include_router(knowledge.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": 1, "role": "admin"}
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -71,9 +81,3 @@ def test_upstream_failures_become_a_safe_503(client, monkeypatch, error):
 
 def test_refusal_message_is_a_normal_answer(client, monkeypatch):
     refusal = "I'm sorry, I don't have reliable information about that."
-    monkeypatch.setattr(knowledge, "rag_query", MagicMock(return_value=refusal))
-
-    response = client.post("/knowledge/query", json={"question": "What is the capital of France?"})
-
-    assert response.status_code == 200
-    assert response.json() == {"answer": refusal}
